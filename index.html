@@ -735,21 +735,6 @@ HIVなど免疫抑制状態、または免疫抑制剤を使用中
 私は、本治療の内容、注意事項、副作用・合併症、施術後の注意点について説明を受け、理解したうえで施術に同意します。また、アレルギー、持病、既往歴、現在治療中の疾患、内服中の薬剤および過去6か月以内の美容治療歴について、申告した内容に相違がないことを確認します。治療効果には個人差があり、期待した結果が得られない場合があること、施術後に予期せぬ症状が生じる可能性があることを理解しました。施術後の経過や副作用の内容によっては、診察・処置に費用が発生する場合があること、施術費用の返金は原則ないことに同意します。
 `
   },
-   {
-    id: 'laser-facial', tag: 'レーザー', name: 'レーザーフェイシャル', accentColor: '#6B3FA0',
-    description: 'アレキサンドライトレーザーによる、シミ・毛穴・ニキビケア。',
-    bgImages: [],
-    consentText: `レーザーフェイシャルに関するインフォームド・コンセント
-
-◇ 治療目的と効果
-アレキサンドライトレーザーによる、シミ・毛穴・ニキビケアを目的とした治療です。
-
-◇ 合併症・注意事項
-1. 疼痛・発赤：冷却にて鎮静します。
-2. 火傷：極稀に発生することがありますが、医師が適切に処置します。
-3. 肝斑への施術は悪化する恐れがあるため注意が必要です。
-4. 妊娠中・授乳中は受けられません。`
-  },
   {
     id: 'dama4', tag: 'ダーマペン4', name: 'ダーマペン4', accentColor: '#8A4040',
     description: '微細な針で肌に傷を付けて、ニキビ跡（クレーター状の陥凹）、毛穴の開き・凹凸の改善を目指します。',
@@ -1753,6 +1738,8 @@ btnSave.addEventListener('click',async()=>{
 
   btnSave.classList.add('loading');btnSave.disabled=true;
   try{
+    /* フォントを事前ロード（初回のみ実際に待つ、2回目以降は即時） */
+    if(!_jpFontsReady){await document.fonts.ready;_jpFontsReady=true;}
     const{jsPDF}=window.jspdf;
     const A4W=210,A4H=297,ML=8,MR=8;
     const now=new Date();
@@ -1789,15 +1776,21 @@ btnSave.addEventListener('click',async()=>{
   }
 });
 
-/* ── 日本語テキスト → PNG ── */
+/* ── 日本語テキスト → PNG（キャンバス再利用・フォントロード1回のみ） ── */
+let _jpFontsReady=false;
+const _jpCanvas=document.createElement('canvas');
+const _jpCtx=_jpCanvas.getContext('2d');
 async function jpTextImg(text,{size=12,weight=500,color='#1A1A1A',bg=null,padX=10,padY=6}={}){
-  await document.fonts.ready;const SC=2,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
-  const tmp=document.createElement('canvas');const tc=tmp.getContext('2d');tc.font=font;
-  const tw=Math.ceil(tc.measureText(text).width);const cW=tw+padX*2*SC,cH=(size+padY*2)*SC;
-  tmp.width=cW;tmp.height=cH;const c=tmp.getContext('2d');
-  if(bg){c.fillStyle=bg;c.beginPath();c.roundRect(0,0,cW,cH,4*SC);c.fill();}
-  c.font=font;c.fillStyle=color;c.textBaseline='top';c.fillText(text,padX*SC,padY*SC);
-  return{url:tmp.toDataURL('image/png'),wMm:cW/SC*0.35,hMm:cH/SC*0.35};
+  if(!_jpFontsReady){await document.fonts.ready;_jpFontsReady=true;}
+  const SC=2,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
+  _jpCtx.font=font;
+  const tw=Math.ceil(_jpCtx.measureText(text).width);
+  const cW=tw+padX*2*SC,cH=(size+padY*2)*SC;
+  _jpCanvas.width=cW;_jpCanvas.height=cH;
+  _jpCtx.font=font;
+  if(bg){_jpCtx.fillStyle=bg;_jpCtx.beginPath();_jpCtx.roundRect(0,0,cW,cH,4*SC);_jpCtx.fill();}
+  _jpCtx.fillStyle=color;_jpCtx.textBaseline='top';_jpCtx.fillText(text,padX*SC,padY*SC);
+  return{url:_jpCanvas.toDataURL('image/png'),wMm:cW/SC*0.35,hMm:cH/SC*0.35};
 }
 
 /* ── PDF オーバーレイ ── */
