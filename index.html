@@ -342,8 +342,109 @@ html, body {
   .info-bar-item-value { font-size: 0.76rem; }
 }
   </style>
+
+  <!-- ログイン画面スタイル -->
+  <style>
+#login-overlay {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg);
+  display: flex; align-items: center; justify-content: center;
+}
+#login-overlay.hidden { display: none; }
+.login-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--sh-md);
+  padding: 40px 36px 36px;
+  width: 100%; max-width: 360px;
+  display: flex; flex-direction: column; align-items: center; gap: 24px;
+}
+.login-logo {
+  font-family: 'Shippori Mincho', serif;
+  font-size: 1.15rem; font-weight: 600;
+  color: var(--teal); letter-spacing: 0.05em; text-align: center;
+}
+.login-logo small {
+  display: block; font-family: 'Noto Sans JP', sans-serif;
+  font-size: 0.72rem; font-weight: 400; color: var(--muted);
+  margin-top: 4px; letter-spacing: 0.02em;
+}
+.login-field {
+  width: 100%; display: flex; flex-direction: column; gap: 8px;
+}
+.login-field label {
+  font-size: 0.78rem; font-weight: 500; color: var(--text-2);
+}
+.login-field input {
+  width: 100%; padding: 11px 14px;
+  border: 1.5px solid var(--border); border-radius: var(--radius-sm);
+  font-size: 1rem; font-family: inherit; color: var(--text);
+  background: var(--surface-2); outline: none;
+  transition: border-color 0.2s;
+}
+.login-field input:focus { border-color: var(--border-focus); }
+.login-btn {
+  width: 100%; padding: 13px;
+  background: var(--teal); color: #fff;
+  border: none; border-radius: var(--radius-sm);
+  font-size: 0.95rem; font-weight: 700; font-family: inherit;
+  cursor: pointer; letter-spacing: 0.05em;
+  box-shadow: var(--sh-teal); transition: background 0.2s;
+}
+.login-btn:hover { background: var(--teal-dark); }
+.login-error {
+  font-size: 0.8rem; color: var(--danger);
+  background: var(--danger-light); border-radius: 8px;
+  padding: 8px 12px; width: 100%; text-align: center;
+  display: none;
+}
+.login-error.show { display: block; }
+  </style>
 </head>
 <body>
+
+<!-- ログイン画面 -->
+<div id="login-overlay">
+  <div class="login-card">
+    <div class="login-logo">
+      電子同意書 署名システム
+      <small>スタッフ専用ログイン</small>
+    </div>
+    <div class="login-field">
+      <label for="login-pass">パスワード</label>
+      <input type="password" id="login-pass" placeholder="パスワードを入力" autocomplete="current-password" />
+    </div>
+    <div class="login-error" id="login-error">パスワードが正しくありません</div>
+    <button class="login-btn" id="login-btn">ログイン</button>
+  </div>
+</div>
+<script>
+(function(){
+  const PASS = 'clinic2026';
+  const KEY  = 'doisho_auth';
+  const overlay = document.getElementById('login-overlay');
+  const input   = document.getElementById('login-pass');
+  const btn     = document.getElementById('login-btn');
+  const err     = document.getElementById('login-error');
+
+  if(sessionStorage.getItem(KEY) === '1'){ overlay.classList.add('hidden'); }
+
+  function tryLogin(){
+    if(input.value === PASS){
+      sessionStorage.setItem(KEY,'1');
+      overlay.classList.add('hidden');
+    } else {
+      err.classList.add('show');
+      input.value='';
+      input.focus();
+      setTimeout(()=>err.classList.remove('show'),3000);
+    }
+  }
+  btn.addEventListener('click', tryLogin);
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+})();
+</script>
 
 <!-- ╔══════════════════════════════════════════════════════════╗
      ║  ★ 設定ファイル（編集はここだけ）                       ║
