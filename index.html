@@ -1,0 +1,1778 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <title>電子同意書 署名システム</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Shippori+Mincho:wght@500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:           #F0EDE8;
+  --surface:      #FFFFFF;
+  --surface-2:    #F7F5F2;
+  --border:       #DDD8D0;
+  --border-focus: #2A6B6B;
+  --teal:         #2A6B6B;
+  --teal-dark:    #1C4E4E;
+  --teal-light:   #E8F2F2;
+  --text:         #1A1A1A;
+  --text-2:       #4A4A4A;
+  --muted:        #7A7570;
+  --danger:       #AE3A2E;
+  --danger-light: #FAEAEA;
+  --success:      #2A6B4B;
+  --purple:       #7A3FA0;
+  --purple-light: #F3EAF8;
+  --sh-sm:   0 1px 4px rgba(0,0,0,0.08);
+  --sh-md:   0 3px 14px rgba(0,0,0,0.10);
+  --sh-teal: 0 4px 18px rgba(42,107,107,0.32);
+  --radius:    15px;
+  --radius-sm: 10px;
+  --sig-h:     170px;        /* 通常の署名欄高さ */
+  --sig-h-sm:  130px;        /* 未成年モード（2段）の署名欄高さ */
+}
+
+html, body {
+  height: 100%; overflow: hidden;
+  font-family: 'Noto Sans JP', sans-serif;
+  background: var(--bg); color: var(--text);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  /* ★ FIX1: 全体の user-select を none に。canvas上でテキスト選択されるのを防止 */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.screen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  transition: opacity 0.24s ease, transform 0.24s ease;
+  will-change: opacity, transform;
+  background: var(--bg);
+}
+.screen.hidden { opacity: 0; pointer-events: none; transform: translateY(14px); }
+
+/* SHARED HEADER */
+.header {
+  display: flex; align-items: center; gap: 13px;
+  padding: 15px 20px 13px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0; z-index: 20;
+}
+.header-icon { width: 38px; height: 38px; flex-shrink: 0; background: var(--teal); border-radius: 11px; display: grid; place-items: center; transition: background 0.3s; }
+.header-icon svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.header-text h1 { font-family: 'Shippori Mincho', serif; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; line-height: 1.3; }
+.header-text p  { font-size: 0.68rem; color: var(--muted); margin-top: 1px; }
+
+.step-indicator { margin-left: auto; flex-shrink: 0; display: flex; align-items: center; gap: 6px; }
+.step-pip { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.step-pip-dot { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 0.65rem; font-weight: 800; background: var(--border); color: var(--muted); transition: background 0.25s, color 0.25s; }
+.step-pip-dot.active { background: var(--teal); color: #fff; }
+.step-pip-dot.done   { background: var(--teal-light); color: var(--teal); }
+.step-pip-label      { font-size: 0.55rem; color: var(--muted); white-space: nowrap; font-weight: 600; letter-spacing: 0.04em; }
+.step-connector      { width: 18px; height: 1.5px; background: var(--border); margin-bottom: 12px; transition: background 0.25s; }
+.step-connector.done { background: var(--teal); }
+
+.btn-back { flex-shrink: 0; border: 1.5px solid var(--border); background: var(--surface); color: var(--teal); font-family: inherit; font-size: 0.8rem; font-weight: 600; padding: 8px 14px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: background 0.15s, border-color 0.15s; }
+.btn-back:active { background: var(--teal-light); border-color: var(--teal); }
+.btn-back svg    { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* STEP 1: ポータル */
+.portal-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 18px 28px; }
+.section-label { font-size: 0.65rem; font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--muted); margin-bottom: 14px; padding-left: 2px; }
+.proc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 13px; }
+.proc-card { background: var(--surface); border-radius: var(--radius); border: 1.5px solid var(--border); box-shadow: var(--sh-sm); cursor: pointer; display: flex; flex-direction: column; overflow: hidden; min-height: 126px; transition: transform 0.13s, box-shadow 0.13s, border-color 0.13s; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+.proc-card:hover  { box-shadow: var(--sh-md); border-color: var(--teal); }
+.proc-card:active { transform: scale(0.97); }
+.proc-thumb { width: 100%; height: 68px; flex-shrink: 0; position: relative; overflow: hidden; background: var(--teal-light); }
+.proc-thumb img { width: 100%; height: 100%; object-fit: cover; object-position: top; opacity: 0.5; }
+.proc-thumb-ph  { position: absolute; inset: 0; display: grid; place-items: center; }
+.proc-thumb-ph svg { width: 32px; height: 32px; opacity: 0.25; fill: none; stroke: var(--teal); stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.proc-body      { padding: 13px 15px 15px; display: flex; flex-direction: column; gap: 5px; flex: 1; }
+.proc-tag       { display: inline-flex; font-size: 0.62rem; font-weight: 800; letter-spacing: 0.09em; padding: 2px 7px; border-radius: 20px; width: fit-content; }
+.proc-name      { font-family: 'Shippori Mincho', serif; font-size: 0.98rem; font-weight: 600; }
+.proc-desc      { font-size: 0.73rem; color: var(--muted); line-height: 1.5; }
+.proc-footer    { margin-top: auto; padding-top: 9px; display: flex; align-items: center; justify-content: space-between; }
+.proc-cta-text  { font-size: 0.7rem; font-weight: 700; }
+.proc-arrow     { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: 0.85rem; font-weight: 700; color: #fff; transition: transform 0.15s; }
+.proc-card:hover .proc-arrow { transform: translateX(3px); }
+
+/* STEP 2: 入力画面 */
+.input-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 20px 18px 28px; display: flex; flex-direction: column; gap: 0; }
+.selected-proc-chip { display: flex; align-items: center; gap: 12px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 14px 16px; margin-bottom: 22px; box-shadow: var(--sh-sm); }
+.chip-accent { width: 6px; border-radius: 3px; align-self: stretch; flex-shrink: 0; }
+.chip-label  { font-size: 0.62rem; color: var(--muted); font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+.chip-name   { font-family: 'Shippori Mincho', serif; font-size: 1.05rem; font-weight: 600; margin-top: 2px; }
+.field-group { display: flex; flex-direction: column; gap: 18px; }
+.field       { display: flex; flex-direction: column; gap: 8px; }
+.field.hidden-field { display: none; }
+.field-label { font-size: 0.78rem; font-weight: 700; color: var(--text-2); display: flex; align-items: center; gap: 7px; }
+.field-label .required-badge { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.06em; background: var(--danger); color: #fff; padding: 1px 5px; border-radius: 4px; }
+.field-label .optional-badge { font-size: 0.58rem; font-weight: 700; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); padding: 1px 5px; border-radius: 4px; }
+.field-hint { font-size: 0.7rem; color: var(--muted); margin-top: -4px; }
+.sub-proc-banner { display: flex; align-items: flex-start; gap: 10px; background: #FEF3E8; border: 1.5px solid #E8C080; border-radius: var(--radius-sm); padding: 12px 14px; font-size: 0.75rem; line-height: 1.6; color: #7A4A10; margin-bottom: -4px; }
+.sub-proc-banner svg { width: 18px; height: 18px; flex-shrink: 0; fill: none; stroke: #C8823A; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; margin-top: 1px; }
+.select-wrap { position: relative; }
+.select-wrap select { width: 100%; height: 58px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 0 48px 0 18px; font-family: 'Noto Sans JP', sans-serif; font-size: 17px; font-weight: 500; color: var(--text); cursor: pointer; outline: none; -webkit-appearance: none; appearance: none; transition: border-color 0.18s, box-shadow 0.18s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%237A7570' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; }
+.select-wrap select:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(42,107,107,0.12); }
+.select-wrap select.placeholder-selected { color: var(--muted); }
+.select-wrap select.error { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(174,58,46,0.12); animation: shake 0.38s ease; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 60%{transform:translateX(8px)} }
+.text-input { width: 100%; height: 58px; background: var(--surface); border: 1.5px solid var(--border); border-radius: var(--radius-sm); padding: 0 18px; font-family: 'Noto Sans JP', sans-serif; font-size: 17px; font-weight: 400; color: var(--text); outline: none; transition: border-color 0.18s, box-shadow 0.18s; user-select: text; -webkit-user-select: text; }
+.text-input::placeholder { color: #BBBAB6; }
+.text-input:focus { border-color: var(--border-focus); box-shadow: 0 0 0 3px rgba(42,107,107,0.12); }
+.text-input.error { border-color: var(--danger); box-shadow: 0 0 0 3px rgba(174,58,46,0.12); animation: shake 0.38s ease; }
+.btn-next { width: 100%; height: 60px; margin-top: 28px; background: var(--teal); color: #fff; border: none; border-radius: var(--radius); font-family: 'Noto Sans JP', sans-serif; font-size: 1rem; font-weight: 700; letter-spacing: 0.04em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; box-shadow: var(--sh-teal); transition: background 0.15s, transform 0.12s; -webkit-tap-highlight-color: transparent; }
+.btn-next:active { background: var(--teal-dark); transform: scale(0.98); }
+.btn-next svg    { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* STEP 3: 署名画面 */
+.info-bar { display: flex; align-items: stretch; background: var(--teal-dark); color: #fff; flex-shrink: 0; overflow: hidden; min-height: 42px; }
+.info-bar-item { display: flex; flex-direction: column; justify-content: center; padding: 7px 16px; position: relative; }
+.info-bar-item + .info-bar-item::before { content: ''; position: absolute; left: 0; top: 20%; bottom: 20%; width: 1px; background: rgba(255,255,255,0.2); }
+.info-bar-item-label { font-size: 0.58rem; font-weight: 800; letter-spacing: 0.1em; opacity: 0.65; text-transform: uppercase; line-height: 1; }
+.info-bar-item-value { font-size: 0.82rem; font-weight: 600; line-height: 1.3; margin-top: 2px; }
+.info-bar-item.date  { margin-left: auto; text-align: right; }
+
+/* ★ FIX2: doc-wrapとdoc-viewportのスクロール修正
+   - doc-wrapは flex:1 で余白を取り overflow:hidden をやめ、代わりに min-height:0 のみ
+   - doc-viewport は overflow-y:scroll（autoより確実）に変更
+   - touch-action: pan-y を明示してiOSタッチスクロールを保証
+*/
+.doc-wrap {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+}
+.doc-viewport {
+  position: absolute; inset: 0;
+  overflow-y: scroll;                       /* ★ auto → scroll */
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;                      /* ★ 垂直スクロールを明示許可 */
+  overscroll-behavior: contain;
+  background: #DAD7D2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 14px;
+  gap: 10px;
+}
+
+/* ドラッグオーバーレイ */
+.doc-drag-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+.drag-chip { position: absolute; pointer-events: all; display: flex; align-items: center; gap: 6px; background: rgba(30,80,80,0.88); color: #fff; padding: 7px 12px 7px 9px; border-radius: 10px; font-size: 0.76rem; font-weight: 700; letter-spacing: 0.02em; cursor: grab; touch-action: none; box-shadow: 0 3px 12px rgba(0,0,0,0.35); user-select: none; white-space: nowrap; border: 1.5px solid rgba(255,255,255,0.25); transition: box-shadow 0.15s, background 0.15s; }
+.drag-chip:active { cursor: grabbing; background: rgba(20,60,60,0.95); }
+.drag-chip-icon  { font-size: 1rem; flex-shrink: 0; }
+.drag-chip-label { font-size: 0.66rem; opacity: 0.75; font-weight: 600; }
+.drag-chip-value { font-size: 0.8rem; font-weight: 800; }
+.drag-chip-handle { width: 14px; height: 14px; opacity: 0.55; flex-shrink: 0; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14'%3E%3Ccircle cx='4' cy='3' r='1.2' fill='white'/%3E%3Ccircle cx='10' cy='3' r='1.2' fill='white'/%3E%3Ccircle cx='4' cy='7' r='1.2' fill='white'/%3E%3Ccircle cx='10' cy='7' r='1.2' fill='white'/%3E%3Ccircle cx='4' cy='11' r='1.2' fill='white'/%3E%3Ccircle cx='10' cy='11' r='1.2' fill='white'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-size: contain; }
+.drag-hint { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.55); color: #fff; font-size: 0.65rem; font-weight: 700; padding: 4px 12px; border-radius: 20px; pointer-events: none; white-space: nowrap; z-index: 30; letter-spacing: 0.04em; opacity: 0; transition: opacity 0.3s; }
+.drag-hint.show { opacity: 1; }
+.doc-page-img { display: block; width: 100%; height: auto; object-fit: contain; border-radius: 6px; box-shadow: 0 4px 22px rgba(0,0,0,0.22); background: #fff; flex-shrink: 0; }
+
+/* ★ FIX2続: テキストコンテンツラップ - flex-shrink:0 で高さを正しく確保 */
+.doc-text-wrap {
+  width: 100%;
+  max-width: 800px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.10);
+  flex-shrink: 0;          /* ★ 縮小しない = 正しい高さを確保 */
+  /* overflow: hidden を削除 ← これがスクロールを妨げていた */
+}
+
+.doc-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #ABA7A2; text-align: center; width: 100%; min-height: 180px; padding: 28px; }
+.doc-placeholder svg { width: 44px; height: 44px; opacity: 0.35; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.doc-placeholder p   { font-size: 0.78rem; line-height: 1.75; }
+.doc-placeholder code { font-size: 0.68rem; background: rgba(0,0,0,0.07); padding: 1px 5px; border-radius: 3px; }
+
+/* ── 署名パネル ── */
+.sig-panel {
+  flex-shrink: 0;
+  background: var(--surface);
+  border-top: 1.5px solid var(--border);
+  box-shadow: 0 -4px 18px rgba(0,0,0,0.07);
+  padding: 11px 15px 13px;
+  display: flex; flex-direction: column; gap: 9px;
+  z-index: 10;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  overflow: hidden;
+  max-height: 700px;
+  transition: max-height 0.35s cubic-bezier(0.4,0,0.2,1),
+              padding-top 0.35s, padding-bottom 0.35s, opacity 0.28s;
+}
+.sig-panel.sig-collapsed {
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: 0;
+  pointer-events: none;
+  border-top-color: transparent;
+  box-shadow: none;
+}
+/* info-bar 内トグルボタン */
+.btn-sig-toggle {
+  margin-left: auto; flex-shrink: 0;
+  display: flex; align-items: center; gap: 5px;
+  background: rgba(255,255,255,0.13);
+  border: 1.5px solid rgba(255,255,255,0.28);
+  border-radius: 8px; color: #fff;
+  font-family: 'Noto Sans JP', sans-serif;
+  font-size: 0.7rem; font-weight: 700;
+  padding: 5px 11px; cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.btn-sig-toggle:active { background: rgba(255,255,255,0.28); }
+.btn-sig-toggle svg {
+  width: 13px; height: 13px; flex-shrink: 0;
+  fill: none; stroke: currentColor;
+  stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round;
+}
+
+/* 署名メタ行 */
+.sig-meta { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+.sig-label { display: flex; align-items: center; gap: 7px; font-size: 0.73rem; font-weight: 700; color: var(--muted); letter-spacing: 0.05em; }
+.sig-dot   { width: 7px; height: 7px; border-radius: 50%; background: var(--border); transition: background 0.3s; flex-shrink: 0; }
+.sig-dot.active { background: var(--teal); }
+.sig-dot.guardian-active { background: var(--purple); }
+.sig-status { font-size: 0.68rem; font-weight: 700; color: var(--teal); display: flex; align-items: center; gap: 4px; opacity: 0; transition: opacity 0.28s; }
+.sig-status.show { opacity: 1; }
+.sig-status svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.sig-status.guardian-status { color: var(--purple); }
+
+/* ★ FIX3: 未成年用 保護者署名セクション */
+.guardian-sig-section {
+  display: none;        /* JS で minor 選択時のみ表示 */
+  flex-direction: column;
+  gap: 9px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+  margin-top: 2px;
+}
+.guardian-sig-section.visible { display: flex; }
+
+/* キャンバス共通 */
+.canvas-wrap {
+  position: relative; width: 100%;
+  height: var(--sig-h);
+  border-radius: var(--radius-sm); overflow: hidden;
+  border: 1.5px solid var(--border); background: #FEFEFE;
+  flex-shrink: 0;
+  transition: border-color 0.2s;
+  /* ★ FIX1: キャンバスラッパーでテキスト選択を完全ブロック */
+  touch-action: none;
+  cursor: crosshair;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+/* 未成年モード（2段）は高さを縮小 */
+.canvas-wrap.small { height: var(--sig-h-sm); }
+
+.canvas-wrap.active         { border-color: var(--teal); }
+.canvas-wrap.guardian-active{ border-color: var(--purple); }
+.canvas-wrap canvas {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  /* ★ FIX1: キャンバス本体でも選択・コールアウト完全ブロック */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+.canvas-guide { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; transition: opacity 0.25s; }
+.canvas-guide span {
+  font-size: 0.76rem; color: #BBBAB5;
+  border: 1px dashed #D2CEC8; border-radius: 6px; padding: 5px 16px;
+  /* ★ FIX1: ガイドテキスト自体も選択不可 */
+  user-select: none; -webkit-user-select: none; pointer-events: none;
+}
+.canvas-wrap.has-sig .canvas-guide { opacity: 0; }
+.sig-line       { position: absolute; bottom: 28px; left: 14px; right: 14px; border-bottom: 1px solid #E0DBD4; pointer-events: none; }
+.sig-line-label { position: absolute; bottom: 10px; left: 14px; font-size: 0.6rem; color: #C5C0BA; pointer-events: none; letter-spacing: 0.04em; user-select: none; -webkit-user-select: none; }
+
+/* アクションボタン行 */
+.actions { display: flex; gap: 9px; flex-shrink: 0; }
+.btn { flex: 1; height: 52px; border: none; border-radius: var(--radius-sm); font-family: 'Noto Sans JP', sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.02em; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 7px; transition: opacity 0.15s, transform 0.1s, background 0.15s; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+.btn:active { transform: scale(0.96); }
+.btn svg    { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.btn-clear         { flex: 0 0 88px; background: var(--bg); color: var(--danger); border: 1.5px solid #E0C0BC; }
+.btn-clear:active  { background: var(--danger-light); }
+.btn-clear.guardian-clear { color: var(--purple); border-color: #D0B8E0; }
+.btn-clear.guardian-clear:active { background: var(--purple-light); }
+.btn-save          { background: var(--teal); color: #fff; box-shadow: var(--sh-teal); }
+.btn-save:active   { background: var(--teal-dark); }
+.btn-save:disabled { background: #B0C4C4; box-shadow: none; cursor: not-allowed; }
+.btn-save.loading  { opacity: 0.75; pointer-events: none; }
+.spinner { width: 17px; height: 17px; border-radius: 50%; border: 2.5px solid rgba(255,255,255,0.3); border-top-color: #fff; animation: spin 0.7s linear infinite; display: none; }
+.btn-save.loading .spinner   { display: block; }
+.btn-save.loading .save-icon { display: none; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* TOAST */
+.toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%) translateY(14px); background: #1A1A1A; color: #fff; padding: 10px 22px; border-radius: 10px; font-size: 0.8rem; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity 0.22s, transform 0.22s; z-index: 9999; white-space: nowrap; }
+.toast.show  { opacity: 1; transform: translateX(-50%) translateY(0); }
+.toast.error { background: var(--danger); }
+.toast.ok    { background: var(--success); }
+
+/* RESPONSIVE */
+@media (orientation: portrait) {
+  :root { --sig-h: 150px; --sig-h-sm: 110px; }
+  .proc-grid    { grid-template-columns: 1fr 1fr; }
+  .btn          { font-size: 0.8rem; height: 50px; }
+  .btn-clear    { flex: 0 0 78px; }
+  .step-pip-label { display: none; }
+}
+@media (orientation: portrait) and (max-width: 500px) { .proc-grid { grid-template-columns: 1fr; } }
+@media (orientation: landscape) and (max-height: 600px) {
+  :root { --sig-h: 130px; --sig-h-sm: 100px; }
+  .sig-panel    { padding: 7px 14px 9px; gap: 6px; }
+  .doc-viewport { padding: 9px; }
+  .info-bar     { min-height: 36px; }
+  .info-bar-item-value { font-size: 0.76rem; }
+}
+  </style>
+</head>
+<body>
+
+<!-- ╔══════════════════════════════════════════════════════════╗
+     ║  ★ 設定ファイル（編集はここだけ）                       ║
+     ╚══════════════════════════════════════════════════════════╝ -->
+<script id="app-config">
+const DOCTORS = [
+  { id: 'shimada',    name: '島田 英徳' },
+  { id: 'narikawa',   name: '成川 功一' },
+  { id: 'matsushima', name: '松島 舞華' },
+];
+
+const PROCEDURES = [
+  {
+    id: 'laser-hair', tag: '医療脱毛', name: '医療脱毛', accentColor: '#2A6B6B',
+    description: '熱発生を利用し、毛根を選択的に破壊する半永久的な脱毛治療です。',
+    bgImages: [],
+    consentText: `医療脱毛に関するインフォームド・コンセント
+
+貴方の治療を担当するにあたって下記の説明を行います。治療内容を十分にご理解の上ご署名ください。 
+
+＊医療脱毛施術の方法と目的、効果 
+この治療は医療機器による熱発生を利用し、毛根を選択的に破壊し、半永久的な脱毛を目的とした治療です。 当院では厚生労働省により医療機器と承認された医療脱毛機を使用しています。 照射時に冷却ガスを同時に噴出することで、痛みの緩和や火傷のリスクを減らします。毛周期に合わせて約２ヶ月周期で 5 回〜10 回以上のレーザー照射が必要となります。 
+
+＊副作用、ならびに合併症 
+疼痛、照射時にゴムではじかれたような軽度の痛みがあります。痛みが心配な方はレーザーの出力を下げたり、ご希望に応じて麻酔クリームの塗布も可能です。(別途￥3,300(税込)を頂戴いたします。)事前にご相談ください。
+毛嚢炎・発赤、毛穴周囲に赤みが生じる場合がありますが、冷却により数時間程度で消失します。
+毛嚢炎による炎症が強く出た場合は、症状が消失するまで数時間をようすることもあります。当院では初回施術時に外用薬を処方しています。
+火傷(水泡・痂皮)色素沈着、日焼け、肌状態によっては軽い熱傷や熱傷後の色素沈着を起こすことがあります。
+乾燥・痒み・敏感肌乾燥肌の方は施術後症状が出る可能性もあります。これらは十分な保湿で予防できます。
+毛周期 1 回の照射で全ての毛根が同じように反応するわけではありません。照射後、抜け落ちる毛、抜け落ちない毛があります。 
+ごく稀にレーザー照射の刺激によって、毛が太くなったり(硬毛化)、増毛したり(多毛化)する可能性があります。こういった症状の原因は解明されておらず誰にでも起こりえる事だと言われています。 当院では、硬毛化、多毛化した場合、その部位のみレーザー照射を休止するか YAGレーザーに切り替えて照射を継続できます。 硬毛化、多毛化によって追加照射を行う場合、別途料金がかかりますので予めご了承お願い致します。
+
+＊その他の注意事項 
+1.毛周期に合わせて約 2 ヶ月周期で通院してください。 
+2.施術当日は入浴(シャワー浴は可能)・激しい運動・飲酒はお控えください。 
+3.日焼けは避け、外出時には必ず日焼け止めを使用してください。日焼けした肌には 1〜2 か月レーザー照射できません。
+4.妊娠中、授乳中の方は施術を受けられません。 
+5.他の脱毛行為(毛抜き、除毛クリーム、家庭用脱毛器等)は使用しないでください。 
+6.部位・肌質・毛質による治療回数は個人差があります。白髪・産毛は残存する可能性があります。 
+7.皮膚科疾患(光線過敏症・単純ヘルペスウイルス感染症・ケロイド体質・皮膚がん)やシミ・黒子・タトゥーのある個所は治療を行わないことがあります。 
+8.てんかん・脳血管疾患・心疾患・腎疾患・血液疾患などと診断された際は、必ず当院までご連絡ください。
+9.B型肝炎・C型肝炎・HIV 感染症の患者様には感染症予防の観点から医療脱毛の施術を提供しておりません。
+10.治療中、治療後に予期しない合併症や後遺症が生じる可能性があります。勿論これらの予防と対策には充分配慮しますが、 万一これらが生じた場合にはその治療に万全を尽くすと同時に、必要と判断された場合はしかるべき医師に意見を求め、 又は治療を依頼することもあります。この点を予めご了承ください。
+11.従業員に対するセクシュアルハラスメントに該当する言動、ならびに迷惑行為（威圧的言動、暴言、つきまとい等）が確認された場合、当院の判断により、以後のご利用・ご来院をお断りすることがあります。
+
+私は、上記内容について理解・確認し、治療リスクも含めて納得した上で治療を受けることに同意致します。
+
+`
+  },
+  {
+    id: 'lumecca', tag: 'IPL治療', name: 'ルメッカ', accentColor: '#3D5A80',
+    description: '肌の色むら・赤み・しみ等を改善する光治療です。',
+    bgImages: [],
+    consentText: `ルメッカ (LUMECCA) インフォームド・コンセント
+
+【治療概要】
+ルメッカ（LUMECCA™）は、肌の色むら・赤み・しみ等の改善を目的とした光治療（IPL）です。
+
+【副作用・注意事項】
+1.色素病変は1〜2週間の期間、治療を始める前よりも色が濃くなります。治療課程の一部として治療箇所に局所的な炎症や発赤、腫れが伴います。
+2.治療過程で毛細血管が凝固し、1〜2週間は色が濃くなります。
+3.治療過程の一部として発赤や腫れが伴います。
+4.肌の引き締め感が施術直後に起こる可能性があります。1〜2ヵ月間で引き締め感は減少しますが、コラーゲン産生がされるにつれ、改善されていきます。
+5.茶色・赤色のシミ、皮膚のたるみなど全ての皮膚病変を同時に改善することが可能な治療です。
+6.完全に肌が改善されるとは保証致しません。
+7.治療には数回の施術が必要です。
+8.治療完了の回数は個人差があります。
+9.治療の際、多少の不快感や一時的な発赤、もしくは腫れが伴う場合がございます。
+10.わずかな副作用のリスクが生じます。
+
+【治療歴】
+※下記に該当する項目がある場合、治療ができない／延期が必要になることがあります。
+妊娠中または授乳中
+ペースメーカー／体内金属等の医療機器を使用している
+治療部位に金属プレート・シリコン・その他異物が入っている
+過去に治療部位の施術で、熱傷（やけど）・色素沈着・瘢痕（傷跡）が強く出たことがある
+HIVなど免疫抑制状態、または免疫抑制剤を使用中
+心臓病・てんかん・高血圧など重篤な疾患がある
+肝臓・腎臓疾患などの持病がある
+再発性単純ヘルペス（口唇ヘルペス等）の既往がある
+過度の日焼け直後、または治療期間中に強い日焼け予定がある
+皮膚に強い乾燥・ひび割れ・炎症・擦過傷・感染徴候がある
+ケロイド体質、創傷治癒に問題がある
+アトピー性皮膚炎など慢性的な皮膚疾患がある
+皮膚の回復が遅い／治りにくいと感じる
+膠原病や甲状腺機能障害などの内分泌疾患がある
+直近3か月以内に、または施術部位に手術歴がある
+施術前後でのトレチノイン／レチノール等の使用がある（使用中・使用予定）
+
+私は、上記内容について理解・確認し、治療リスクも含めて納得した上で治療を受けることに同意致します。
+`
+  },
+  {
+    id: 'ion-celsus', tag: '導入治療', name: 'イオン導入・セルサー', accentColor: '#3A7A5A',
+    description: '微弱電流により、美肌成分を肌の奥へ浸透させ細胞を活性化します。',
+    bgImages: [],
+    consentText: `イオン導入・セルサーに関するインフォームド・コンセント
+
+貴方の治療を担当するにあたり、下記説明を行います。治療内容を十分にご理解の上ご署名下さい。 
+
+◇ 治療目的と効果 
+バイオニックセルサー(イオン導入)とは、肌の表面に塗るだけでは浸透しにくい美肌成分を、微弱電流を流すことにより肌の奥へ浸透させる施術です。加えて、微弱電流によってお肌の細胞を活性化させます。痛みやダウンタイムがないことから、種類が豊富な美肌治療の中でも特に気軽に受けられる治療と言えます。サリチル酸マクロゴールピール等ピーリングとの併用がより効果的です。 
+
+◇ 適応症状(イオン導入・セルサー同時施術の場合) 
+ニキビ・ニキビ跡の改善・毛穴の黒ずみ・くすみ・しみ・毛穴の引き締め・美白 小じわの改善・お肌のハリと弾力アップ・キメを整える効果があります。 
+
+◇ 合併症 
+疼痛：個人差はありますが、刺激感(ピリピリ) を感じる場合もございます。 
+発赤・腫張：治療直後から数時間程度、赤みがありますが、冷却・薬の塗布にて鎮静します。 
+乾燥痒み：敏感肌・乾燥肌の方は治療後症状が出る可能性もありますが、保湿により改善されます。 
+
+◇ 注意事項 
+・一時的に赤みが出たりニキビができたりしますが基本的には治ってくるものですので
+　ひどく悪化する場合やなかなか治らないような場合はご相談ください。 
+・すべての金属製アクセサリーははずしていただきます。 
+・金の糸を挿入していると施術の際のリスクになります。 
+・特定の薬を服用されている場合や特定の治療を受けられている場合は受けられないことがございます。
+・皮膚疾患等のある箇所は治療を行わないことがあります。 
+
+◇ 禁忌事項 
+ヘルペスの症状のある方、 アトピー性皮膚炎の方、 皮膚がんなど 
+妊娠・授乳中の方 
+ペースメーカー等体内医療機器を使用されている方 
+てんかん・心臓病など全身疾患のある方 
+その他、体調のすぐれない方や治療中の病気・既往のある方もご相談ください。 
+
+◇ 治療後の経過と通院 
+・治療期間中は保湿を心がけて頂き、日焼けを避け、外出時には必ず日焼け止めを使用して下さい。 
+・通院:3週間〜1ヵ月周期を目安にして下さい。 
+・効果や反応の出方には個人差があります。 
+
+尚、治療中や治療後に予期せぬ合併症や後遺症が生じる可能性があります。 
+これらの予防と対策には充分配慮しますが、 万が一これらが生じた場合はその治療に万全を尽くすと同時に、 必要と判断された場合はしかるべき医師に意見を求め、又は治療を依頼する場合もあります。 
+この点を予めご了承下さい。
+`
+  },
+  {
+    id: 'laser-facial', tag: 'レーザー', name: 'レーザーフェイシャル', accentColor: '#6B3FA0',
+    description: 'アレキサンドライトレーザーによる、シミ・毛穴・ニキビケア。',
+    bgImages: [],
+    consentText: `レーザーフェイシャルに関するインフォームド・コンセント（説明と同意）
+
+貴方の治療を担当するにあたり、下記説明を行います。
+治療内容を十分にご理解の上ご署名下さい。
+
+◇　治療目的と効果
+レーザーフェイシャルはアレキサンドライトレーザーによる
+シミ・毛穴・ニキビケアを目的とした治療です。
+
+◇　合併症
+疼痛:個人差はありますが、軽度です。
+発赤・腫張:冷却にて鎮静します。
+火傷(水疱・痂皮):皮膚状態によりますが、発生率はごく稀です。
+その際には医師の指示のもと適切な処置を行います。
+乾燥・痒み:敏感肌・乾燥肌の方は施術後症状が出る可能性もありますが、保湿により改善されます。
+
+◇　施術後の経過と通院
+通院：3 週間〜1 カ月周期を目安にして下さい。
+治療期間中は日焼けを避け、外出時には必ず日焼け止めを使用して下さい。
+妊娠中、授乳中は受けられません。
+コース使用期限は 2 年以内とします。
+特定の薬を服用されている場合や特定の治療を受けられている場合は受けられないことがございます。
+効果や反応の出方には個人差があります。
+
+◇　施術できない場合
+肝斑への施術は悪化する恐れがあります。
+皮膚疾患や黒子のある箇所は、治療を行わないことがあります。
+ニキビが一時的に悪化し赤くなる事がありますが1週間程度で改善します。
+使用中のお薬を休薬していただく場合がございます。使用しているお薬があればお申し出ください。
+
+尚、治療中や治療後に予期せぬ合併症や後遺症が生じる可能性があります。
+これらの予防と対策には充分配慮しますが、万が一これらが生じた場合はその治療に万全を尽くすと同時に、必要と判断された場合はしかるべき医師に意見を求め、又は治療を依頼する場合もあります。この点を予めご了承下さい。
+`
+  },
+ {
+    id: 'inmode', tag: 'インモードVリフト', name: 'インモードVリフト', accentColor: '#C8823A',
+    description: 'MiniFX・Formaによる小顔治療',
+    bgImages: [],
+    consentText: `インモードVリフト（MiniFX・Forma）治療同意書
+
+インモードVリフトは、「MiniFX」と「Forma」の高周波（RF）を用いて、フェイスラインの引き締め、小顔、リフトアップ、肌のハリ感向上を目的として行う治療です。
+効果には個人差があり、十分な効果を得るために複数回の施術が必要となる場合があります。
+
+▼施術を受けられない方・施術できない場合がある方
+以下に該当する方は、施術をお受けいただけない、または医師の判断により施術をお断りする場合があります。
+ペースメーカー、埋め込み式除細動器などの医療機器を使用中の方
+治療部位に金属、金の糸、永久インプラント等がある方（※歯科インプラントは要相談）
+妊娠中、授乳中の方
+皮膚癌、前癌病変、重い持病、てんかん、自己免疫疾患等のある方
+治療部位に創傷、炎症、感染、ヘルペス、湿疹などがある方
+最近、ヒアルロン酸・ボトックス等の注入治療や、糸リフト、HIFU、高周波、レーザー等の美容施術を受けた方
+アレルギー体質の方、金属・薬剤・麻酔・化粧品等でアレルギー症状を起こしたことがある方
+糖尿病、出血傾向、ケロイド体質、自己免疫疾患その他の持病、既往歴、現在治療中の疾患がある方
+※上記疾患のある方、他院施術を含め、過去6か月以内の美容治療歴がある方は必ず事前にお申し出ください。内容により、施術をお受けいただけない場合や、医師の判断により施術方法の変更、延期または中止となる場合があります。
+
+▼注意事項
+施術中は熱感、吸引感、軽い痛みを感じることがあります。
+痛みや熱さが強い場合は、出力調整を行いますのでお申し出ください。
+施術前後に、経過確認のため写真撮影を行う場合があります。写真は院内で適切に管理し、本人の同意なく第三者へ開示いたしません。
+治療効果には個人差があり、ご希望どおりの結果が得られない場合があります。
+アトピー性皮膚炎、接触皮膚炎、脂漏性皮膚炎、酒さ、重度のニキビ等、皮膚疾患がある方は、熱刺激や摩擦により、赤み、腫れ、痛み、炎症の増悪、色素沈着等が生じやすくなる場合があります。
+※症状の程度や治療部位の状態によっては、出力調整、施術範囲の変更、施術の延期または中止を行うことがあります。
+
+▼副作用・合併症
+赤み、熱感、腫れ、むくみ、圧痛、内出血等が起こることがあります。通常は数日〜2週間程度で軽快します。
+まれに、火傷、水疱、色素沈着、しびれ感、違和感等が生じることがあります。
+
+▼施術後の注意点
+シャワーは当日から、入浴は翌日から可能です。
+当日は熱いお湯での洗顔、飲酒、激しい運動、サウナはお控えください。
+強い圧迫やマッサージは1週間程度お控えください。
+施術後は保湿を行い、外出時は日焼け止めを使用してください。
+強い痛み、水疱、腫れの悪化などがある場合は、速やかに当院へご連絡ください。
+
+私は、本治療の内容、注意事項、副作用・合併症、施術後の注意点について説明を受け、理解したうえで施術に同意します。また、アレルギー、持病、既往歴、現在治療中の疾患、内服中の薬剤および過去6か月以内の美容治療歴について、申告した内容に相違がないことを確認します。治療効果には個人差があり、期待した結果が得られない場合があること、施術後に予期せぬ症状が生じる可能性があることを理解しました。施術後の経過や副作用の内容によっては、診察・処置に費用が発生する場合があること、施術費用の返金は原則ないことに同意します。
+`
+  },
+   {
+    id: 'laser-facial', tag: 'レーザー', name: 'レーザーフェイシャル', accentColor: '#6B3FA0',
+    description: 'アレキサンドライトレーザーによる、シミ・毛穴・ニキビケア。',
+    bgImages: [],
+    consentText: `レーザーフェイシャルに関するインフォームド・コンセント
+
+◇ 治療目的と効果
+アレキサンドライトレーザーによる、シミ・毛穴・ニキビケアを目的とした治療です。
+
+◇ 合併症・注意事項
+1. 疼痛・発赤：冷却にて鎮静します。
+2. 火傷：極稀に発生することがありますが、医師が適切に処置します。
+3. 肝斑への施術は悪化する恐れがあるため注意が必要です。
+4. 妊娠中・授乳中は受けられません。`
+  },
+  {
+    id: 'dama4', tag: 'ダーマペン4', name: 'ダーマペン4', accentColor: '#8A4040',
+    description: '微細な針で肌に傷を付けて、ニキビ跡（クレーター状の陥凹）、毛穴の開き・凹凸の改善を目指します。',
+    bgImages: [],
+    consentText: `
+ダーマペンは、にきび痕、毛穴の開き、小じわ、肌質改善に対する治療です。 高密度に肌に穴を開けて、ヒアルロン酸や美容液成分を効率よく導入し、創傷治癒力を利用し肌を再生させます。
+
+◆適応◆
+ニキビ跡（クレーター状の陥凹）、毛穴の開き・凹凸 、皮膚のシワ等
+ 
+◆禁忌事項◆ ※下記の項目に当てはまる方は施術出来ません。 
+・出血傾向、出血性疾患のある方（抗血小板薬内服等） 
+・妊娠、または妊娠している可能性のある方、授乳中の方 
+・麻酔によるアレルギーを起こしたことがある方
+・局所に感染がある方、ケロイド体質の方 
+・施術部位に皮膚疾患のある方 
+・肝斑、日焼け後、色素沈着の強い部分がある方 
+・炎症性ニキビや重度なニキビ ・金属アレルギーの方 
+・重度の糖尿病・膠原病・透析中・悪性腫瘍などで治療中の方
+
+◆副作用◆ 
+・施術中は火照り感やピリピリとした刺激を感じることがあります。
+・施術後、数日〜１週間間程度、軽度 の赤み、むくみ、皮剥け、点状出血班が出る事があります。 
+・体質によって、稀に軽度の腫れや色素沈着を起こす可能性があります。 
+
+◆注意事項◆
+・治療当日は激しい運動、サウナ、飲酒等は避けてください。 
+・施術後は乾燥しやすい状態となっておりますので保湿はこまめに行ってください。
+・日焼け止めを使用して紫外線対策を十分に行い、日焼けは避けて下さい。
+・施術後 12 時間程は洗顔を控えてください。メイクは翌日から可能です。 
+・施術後の皮膚は敏感となっていますので、アルコール成分入りのスキンケア・スクラブ剤などのご使用はお控え頂き、マッサージなどの摩擦や刺激をお肌に与えないように注意してください。 
+・治療期間中は日焼け止め（SPF30 以上）を使用し、日焼けを予防してください。 
+・古くなった角質がポロポロと剥がれてくることがありますが、無理に剥がしたり、強くこすったりしな いで下さい。 
+・ニキビ治療でピーリング効果のある製剤を使用されている方、グリコール酸、サリチル酸、トレチノインやレチノール、ハイドロキノンなどを使用されている方は刺激が出やすいことがあるので施術前後１週間程は使用を控えて下さい。
+
+私は、上記内容について理解・確認し、治療リスクも含めて納得した上で治療を受けることに同意致します。
+`
+  },
+  {
+    id: 'massage-peel', tag: 'ピーリング', name: 'マッサージピール', accentColor: '#C8823A',
+    description: '真皮深層まで浸透し、コラーゲン増生を促すハリ弾力に特化した治療です。',
+    bgImages: [],
+    consentText: `マッサージピール (PRX-T33) 治療同意書
+
+【PRX-T33の治療について】
+
+PRX-T33はTCA（トリクロロ酢酸）、低濃度過酸化水素、コウジ酸が配合された製剤です。
+TCAが真皮深くに浸透し、線維芽細胞を活性化させることによりコラーゲンが増生され、肌にハリや弾力をもたらします。また、コウジ酸のメラニン生成抑制作用によりシミやくすみを改善します。
+過酸化水素の働きにより、皮膚表面のピーリング作用が抑えられ、刺激感がほとんどなく、赤みや皮ムケなどが起こりにくいのが特徴です。
+
+【注意点】
+1.仮に赤みが出現しても通常はすぐに治まりますが、数日後に薄皮が剥けることがあります。
+2.直径1〜2mmの白い丘疹（稗粒腫に似た白いブツブツ）が出現することがあります。症状は1時間ほどで改善しますが、薄皮が剥けることがあります。
+3.赤みや皮ムケが生じた場合は、紫外線予防（UVケア）、保湿を行い、必要に応じてステロイドなどの抗炎症剤を塗布します。
+4.かさぶたができた場合は落屑するまで剥がさないでください。無理に剥がすと色素沈着や瘢痕の原因となることがあります。
+5.刺激に弱い目の周り（特に目尻）、小鼻、法令線付近、口周り（特に口角）、傷のある部位は肌の状態により治療を避ける場合があります。
+6.配合成分に対する過敏症、妊娠、授乳中、重度の敏感肌、強い炎症（アトピーやかぶれなど）、脂漏性皮膚炎の部位、ヘルペス治療中、日光過敏症の方は安全性の観点より治療が受けられません。
+7.トレチノインや過酸化ベンゾイルを使用されている方は治療前後2週間の使用を控えて下さい。
+8.2〜3週間おきに5回の治療が1クールの目安です。1ヶ月ほど肌を休ませた後、メンテナンスとして1〜2ヶ月に1回の治療をお勧めします。（肌の状態によりメンテナンス前にさらに1クールの治療をお勧めする場合もあります）
+9.お肌に異常がなければ、治療当日より洗顔やメイクが可能ですが、こすらないようにしてください。また、ホームケアとして紫外線予防（UVケア）、保湿、必要に応じて抗炎症剤を塗布してください。治療後は乾燥を伴うため、効果を高めるためにも保湿は入念に行ってください。
+
+✽以上は一般的な留意事項であり、症状等には個人差が生じる旨、ご理解いただきますようお願い致します。
+上記の内容に関して充分な説明を受け理解致しました。また、不明な点に関して質問をする機会がありました。よって、PRX-T33治療を受けることに同意致します。
+`
+  },
+  {
+    id: 'drip', tag: '美容点滴', name: '美容点滴', accentColor: '#2A6B6B',
+    description: '疲労回復、美白・美肌ケアなどの栄養素を直接注入する治療です。',
+    bgImages: [],
+    consentText: `貴方の治療を担当するにあたり、下記説明を行います。治療内容を十分にご理解の上ご署名下さい。
+
+♦治療目的と効果
+食事では不足しがちな栄養素、有効成分を直接血管内に注入する治療です。疲労回復、美白・美肌ケア、ダイエットサポート、ニキビ対策、アンチエイジング効果、生活習慣病予防の改善などの効果を期待できます。 
+
+♦副作用
+治療により、注射部位及び周囲の疼痛、発赤、皮下出血斑、腫脹、熱感、色素沈着、感染症、神経損傷、血管迷走神経反応等の症状が起こる場合がございます. 
+血管穿刺部の痛みなどが起こる場合があります。点滴速度の調整や注射部位を保温することで多くは解決出来ます。
+体質などにより、アレルギーやアナフィラキシーショックが生じた際は、緊急処置を行います。しかし、専門的な検査・治療を要する際の移送やそこでの検査・治療などに関わる一切の費用に関して当院は責任を負いません。
+
+♦注意点
+治療当日の体調によっては点滴をお断りする場合があります。
+自己免疫性疾患、極小血管障害、アレルギー体質の方は治療できません。
+妊娠中、授乳中の方はご注意ください。母体や胎児に影響を与える事例はありませんが、ホルモンバランスの変化によりお肌が過敏になり肌荒れを起こしやすくなるなどお身体の変調を考慮し、治療はできません。
+お使いいただいているお薬によっては、当日治療ができない場合があります。
+感染症のある方及び感染症の治療を受けている方の施術はできません。
+内服薬（血液をサラサラにするお薬等）をお飲みになっている方は、事前に申告ください。
+他院を含め、3カ月以内に美容治療を受けた方は必ずお申し出ください。受けられた施術の内容、時期によっては治療をお断りする場合があります。
+治療効果がご期待に添えない場合や副作用が発症した場合でも治療費の返還はありません。また、副作用に関わる治療費は患者様ご本人のご負担になりますことをご了承ください。
+
+
+以上の内容を十分に理解しましたので、治療を受けることに同意いたします。
+`
+  },
+  {
+    id: 'hyaluron', tag: '注入治療', name: 'ヒアルロン酸注入', accentColor: '#3D5A80',
+    description: 'しわやくぼみを改善し、ボリュームを補う治療です。',
+    bgImages: [],
+    consentText: `ヒアルロン酸注入に関するインフォームド・コンセント
+
+・治療法について
+ヒアルロン酸使用軟組織注入材を、顔面または頸部の皮膚の下に、細い針で注入する治療です。
+
+・成分について
+ヒアルロン酸は、もともと体内で自然に作られる物質であるため、皮膚とのなじみがよく、注入材として安全であるとされています。本品には痛みをやわらげる成分:リドカインが含まれています。
+
+・効果について
+皮膚の下に注入することでシワや溝を一定期間目立たなくしたり、皮膚のボリュームを増加させることができます。1回の注入効果の持続期間は、通常12か月〜24か月程度です。（製剤・個人により差がございます。）時間の経過とともに効果が消失し注入前の状態に戻ります。この場合、本品を再度注入することによって同様の効果が得られます。
+
+・有害事象・副作用について
+重大な有害事象：まれに血管内注入又は組織圧迫に起因する一過性又は非可逆性の失明、脳卒中(脳虚血、脳出血、脳梗塞)を誘発
+その他の有害事象：小結節、数珠状小隆起、肉芽腫、アレルギー反応/過敏症、ヘルペス、修正不足/減少、修正位置のずれ、壊死(血管塞栓、血管圧迫等に起因)、無感覚/感覚異常、疼痛、膿瘍、感染、血管性浮腫、変色/着色、血腫/斑状出血、掻痒、炎症反応、発赤/発疹、腫脹/浮腫、その他(自己免疫疾患、眩暈、しわ/瘢痕の深化、乾燥肌、呼吸困難、インフルエンザ様症状、頭痛、不快感、筋無力症、悪心、瘢痕、自己免疫症状/結合組織疾患、失神、血管攣縮、視力障害等)
+
+本品による全身性作用は予想されませんが、本品に含まれる麻酔成分で観察されうる副作用は以下の通りです。
+重大な副作用(頻度不明):ショック、意識障害・振戦・痙攣、悪性高熱
+その他の副作用(頻度不明) 中枢神経:眠気、不安、興奮、霧視、眩暈等 消化器:悪心・嘔吐等
+過敏症:蕁麻疹等の皮膚症状、浮腫等
+これらの症状、その他にも何らかの異常が現れた場合には、直ちに医師にご相談ください。
+
+・治療を受ける際の注意点
+【治療前】
+以下の既往歴のある方は使用できません。
+本品の成分又はアミド型局所麻酔剤に対し過敏症の既往歴のある方
+グラム陽性菌由来蛋白に対し過敏症の既往歴のある方
+以下の症状がある方は、医師にお申し出ください。
+本品の治療を過去に受けられたことがある方(本品の患者一人当りの年間使用量に限度があります-体重60kgあたり20mｌ)
+他の充填材の治療を過去に受けられたことがある方
+ヒアルロン酸を含む化粧品などで、お肌のトラブルを起こしたことのある方
+妊婦、産婦、授乳婦、及び未成年の方
+アナフィラキシーの既往、蕁麻疹等のアレルギー症状を起こしやすい体質を有する方
+連鎖球菌性疾患(再発性の咽頭痛、急性のリウマチ熱等)の既往歴のある方、及び心臓合併症を伴う急性リウマチ熱がみられる方
+免疫機能に異常を有する又はその既往歴のある方、及び免疫抑制療法を受けている方
+ケロイド形成、肥厚性瘢痕や色素異常症を発症しやすい方(ケロイド形成、肥厚性瘢痕、又は色素異常症を発症するおそれがあります)
+出血傾向のある方又はアスピリンなどの非ステロイド性消炎鎮痛剤やワルファリンなど抗凝固剤を使用している方
+レーザー治療、ケミカルピーリング又はその他の皮膚擦傷法による治療を受けている又は、受ける予定の方
+心刺激伝導障害のある方(リドカインにより症状を悪化させることがあります)
+重篤な肝障害又は重篤な腎障害のある方(リドカインにより中毒症状が発現しやすくなります)
+ポルフィリン症の方は(リドカインにより急性腹症、四肢麻痺、意識障害等の急性症状を誘発するおそれがあります)
+以下の薬剤を使用している方
+クラスIII抗不整脈剤(アミオダロン等)、アミド型局所麻酔剤(メピバカイン、ブピバカイン等)、クラスI抗不整脈薬(リドカイン、キニジン等)
+
+【治療後】
+処置後24時間は、激しい運動や、日光や高温への長時間の曝露、飲酒は避けてください(一時的に、注入部位に発赤、膨張、掻痒が起こることがあります)。
+軽度から中等度の注入による反応が出ることがあります。何らかの異常が現れた場合には、直ちに医師にご連絡ください。
+最適な効果を得るために微調整のための補足注入が必要になる場合があります。その場合は、医師から指示された時期に再来院し、処置を受けてください。
+
+私は、本治療の内容、注意事項、副作用・合併症、施術後の注意点について説明を受け、理解したうえで施術に同意します。
+また、治療効果には個人差があり、期待した結果が得られない場合があること、施術後に予期せぬ症状が生じる可能性があることを理解しました。施術後の経過や副作用の内容によっては、診察・処置に費用が発生する場合があること、施術費用の返金は原則ないことに同意します。
+`
+  },
+ {
+    id: 'hyaluron', tag: '注入治療', name: '肌質改善ヒアルロン酸', accentColor: '#3D5A80',
+    description: '皮膚の浅い層（真皮〜皮下浅層）へ注入し、肌の保水力や弾力を改善',
+    bgImages: [],
+    consentText: `ヒアルロン酸注入（肌質改善目的）に関するインフォームド・コンセント
+
+▼施術の目的・概要
+本施術は、ヒアルロン酸製剤（非架橋ヒアルロン酸等）を皮膚の浅い層（真皮〜皮下浅層）へ注入し、肌の保水力や弾力を改善することで、乾燥、小じわ、ハリ不足の改善、キメ、ツヤ、毛穴、くすみの改善、肌のなめらかさ・質感の向上を目的とする施術です。本施術は、輪郭形成や深いしわを埋めることを主目的とする「ボリューム形成目的のヒアルロン酸注入」とは異なり、肌全体の質感改善を目的とした治療です。
+
+▼効果について
+効果の感じ方には個人差があり、1回で十分な変化が得られない場合があります。
+複数回の施術（例：数週間おきに複数回）が推奨される場合があります。
+効果の持続期間は、体質・肌状態・注入部位・注入量・生活習慣等により異なります。
+症状（皮膚のたるみが強い、脂肪突出が主因、深いしわ等）によっては、本施術のみでは十分な改善が得られない場合があります。
+施術結果には個人差があり、希望通りの結果を保証するものではありません。
+
+
+▼起こりうる反応・副作用・合併症
+注入時の痛み、違和感、圧痛、つっぱり感
+赤み、腫れ、むくみ、熱感、内出血（青あざ）、点状出血
+一時的な凹凸感、しこり感
+炎症、感染、化膿、アレルギー反応（発疹、蕁麻疹、呼吸苦など）
+しこり（硬結）、結節、色素沈着
+ヘルペスの再発（既往がある場合）
+血管障害（血管内閉塞）による皮膚障害（皮膚壊死）
+視力障害など重篤な合併症（非常に稀）
+
+※強い痛み、皮膚の色の変化（白い・紫になる）、腫れの悪化、視力の変化などの異常がある場合は緊急対応が必要となることを理解し、速やかに医療機関へ連絡します。
+
+▼施術が受けられない／延期・変更となる場合
+妊娠中または授乳中
+発熱、強い体調不良
+施術部位に炎症、感染、傷、湿疹、重度の皮膚トラブルがある
+重度の皮膚疾患、ケロイド体質、創傷治癒障害
+出血傾向がある、または抗凝固薬・抗血小板薬を内服中
+免疫抑制状態、免疫抑制剤の使用
+ヒアルロン酸、麻酔薬、消毒薬等にアレルギーがある
+施術部位に異物（シリコン、金属、糸リフト等）が入っている
+直近で施術部位にレーザー、ピーリング、外科処置等を行っている
+その他、医師が不適当と判断した場合
+
+▼施術後の注意事項
+当日は長時間の入浴、サウナ、激しい運動、飲酒は控える
+施術部位を強く擦る、揉む、押す、マッサージする等の刺激を避ける
+清潔を保ち、注入部位を不必要に触らない
+腫れや熱感がある場合は、必要に応じて冷却する
+異常（強い痛み、急な腫れ、熱感、膿、視力変化等）がある場合は速やかに連絡する
+
+私は、以下を理解し同意します。
+施術内容・目的・効果・リスクについて十分な説明を受け、質問の機会があり納得しました。
+施術結果には個人差があり、希望通りの効果を保証するものではないことを理解しました。
+副作用・合併症が生じた場合、速やかに申し出ることを理解しました。
+私は自身の意思で施術を受け、いつでも施術を中止できることを理解しました。
+`
+  },
+  {
+    id: 'hyaluron', tag: 'ヒルロニダーゼ', name: 'ヒアルロニダーゼ', accentColor: '#3D5A80',
+    description: 'ヒアルロン酸を溶解・分解・吸収させる治療',
+    bgImages: [],
+    consentText: `ヒアルロン酸注入（肌質改善目的）に関するインフォームド・コンセント
+
+    ヒアルロニダーゼとはヒアルロン酸を加水分解する酵素です。ヒアルロン酸の注入量が多い場合や仕上がりがイメージと違うなどヒアルロン酸を修正したい場合にヒアルロニダーゼを注入することで修正することができます。効果は1～2日で実感できることが多いですが、早い方では注射直後でも効果がはっきりと分かることもあります。
+
+▼適応症例
+ヒアルロン酸の注入量が多い、仕上がりが不自然になった、過去に注入したヒアルロン酸が吸収しきれず不自然な形で残っている、ヒアルロン酸のアレルギーまたは感染が疑われる場合。
+
+▼治療方法と経過
+ヒアルロニダーゼをヒアルロン酸治療部位に注射することにより、ヒアルロン酸を分解・溶解し、吸収させます。
+
+▼治療上の注意および副作用
+・注射直後の針跡や内出血などが起きる可能性があります。
+・ヒアルロン酸の再注入は2週間空けてから施術して下さい。
+・アレルギーを引き起こす可能性があります。異常が生じる場合には自己判断せず早めに当院の受診をして下さい。
+・希望した箇所以外のヒアルロン酸が溶解される可能性
+・効果が不十分または過剰になる可能性
+
+▼治療が受けられない方・注意が必要な方
+・施術部位にニキビなどの炎症がある方
+・妊娠中の方
+
+尚、治療中、治療後に予期しない合併症や後遺症が生じる可能性があります。
+勿論これらの予防と対策には十分配慮しますが、万一これらが生じた場合は、その治療に万全を尽くすと同時に、必要と判断された場合には、しかるべき医師に意見を求め、又は治療を依頼する事もあります。この点を予めご了承下さい。
+`
+  },
+  {
+    id: 'thread', tag: '糸リフト', name: '糸リフト手術', accentColor: '#6B3FA0',
+    description: '溶ける糸を使用してタルミ改善を目的とする治療です。',
+    bgImages: [],
+    consentText: `糸リフト手術に関する インフォームド・コンセント（説明と同意）
+
+貴方の治療を担当するにあたり、下記の説明を行います。治療内容を十分にご理解の上ご署名下さい。 
+
+糸リフトは溶ける糸を使用してタルミ改善を目的とする治療です。 
+麻酔(局所麻酔・静脈麻酔)：痛みは最小限ですが、押したり引っ張ったりする感覚はあります。 静脈麻酔は別途費用がかかります。 
+ <ショッピングリフト> 皮膚表面の浅い部分に糸を入れることで肌のハリと引き締め、美肌効果が期待できます。当院で使用するショートスレッドの素材であるPDOは吸収されるまでに半年から一年程度かかると言われており、コラーゲン増生による引き締め効果や美肌効果が期待できます。 
+
+【合併症・副作用】
+疼痛：疼痛で処方される鎮痛剤にてコントロール可能です。 
+腫れ：数日〜1週間程度で消失します。 
+内出血：数日〜1週間程度で消失します。 
+感覚鈍麻・違和感：個人差はございますが、数週間〜数ヵ月程度で改善されます。 
+感染症：処方される抗生物質の使用により極めてまれです。 
+凹凸：数日〜数週間程度で改善されます。 
+糸の突出：適切な処置により改善されます。 
+過矯正：予想以上の効果が出る可能性があります。 
+左右非対称：もともとの左右差が強調される場合があります。 
+リフティングの挿入物により一時的に顔面神経麻痺が起こる可能性があります。 
+顎下・首に挿入する場合は、直後より首の締めつけ感、首を動かした時の痛み、皮膚のヨレがございますが徐々に落ち着いてきます。 
+
+【術後経過と通院】 
+1週間後、1ヵ月後検診：ご状態の診察・経過観察を行います。 
+針穴が数日間残る可能性があります。 
+
+
+尚、治療中・治療後に予期しない合併症や後遺症が生じる可能性があります。勿論これらの予防と対策には充分配慮しますが、万一これらが生じた場合は、その治療に万全を尽くすと同時に、必要と判断された場合は、しかるべき医師に意見を求め、又は治療を依頼する場合もあります。この点を予めご了承下さい。
+`
+  },
+  {
+    id: 'botox', tag: '注入治療', name: 'ボトックス注入', accentColor: '#C8823A',
+    description: '表情筋の過収縮を弱め、しわや汗を抑える治療です。',
+    bgImages: [],
+    consentText: `ボトックス注入療法(ボツリヌス毒素療法)に関するインフォームド・コンセント(説明と同意)
+
+貴方の治療を担当するにあたり下記の説明を行います。資料内容を十分にご理解の上ご署名下さい。
+
+＊治療前に知っておいて頂きたいこと
+ボトックスとは？
+ボツリヌス菌の毒素のことで、筋肉の過収縮を弱める働きがあります。このため、筋肉の過収縮が原因のシワには有効で、お顔の表情筋や咬筋など筋肉が発達した部分に注入します。この治療法は安全性も高く、日常生活に支障を来すことも少ないといわれています。投与は何回でも行えます。
+汗を抑える作用もあり、脇汗・手の平・足裏の汗などを一時的に止める作用もあります。
+
+効果発揮までの期間：約1週間（咬筋：1ヶ月）
+効果持続期間：3ヶ月～6ヶ月程度(但し、個人差があります)
+投与部位：お顔の表情筋や咬筋など筋肉が発達した部位
+(ex．目尻の笑いジワ、眉間の縦ジワ、額の横ジワ)
+投与方法：表情筋への筋肉注射
+合併症：表情筋麻痺による一時的な眼瞼下垂、眉の拳上など
+
+
+※ボトックスは熱に弱いので、本日は長時間の入浴・サウナ・運動をお控え下さい。
+※妊娠中･授乳中の方は治療を受けられません。また、妊娠する可能性がある方はボトックスの投与中及び最終投与後2回の月経を経るまでは避妊するようにして下さい。男性はボトックス投与中及び最終投与後の3ヶ月は避妊するようにして下さい。
+
+
+尚、治療中、治療後に予期しない合併症や後遺症が生じる可能性があります。
+勿論これらの予防と対策には十分配慮しますが、万一これらが生じた場合は、
+その治療に万全を尽くすと同時に、必要と判断された場合には、しかるべき医
+師に意見を求め、又は治療を依頼する事もあります。この点を予めご了承下さい。
+`
+  },
+
+   {
+    id: 'botox', tag: '注入治療', name: 'スキンボトックス', accentColor: '#C8823A',
+    description: '汗腺の動きを弱めて小じわ・肌のハリ改善・皮脂・汗の分泌抑制（毛穴・ニキビの改善）効果',
+    bgImages: [],
+    consentText: `＊ボトックスとは
+ボトックスとはボツリヌス菌の毒素のことで、筋肉の過収縮を弱める働きがあります。このため、筋肉の過収縮が原因のシワには有効で、お顔の表情筋や咬筋など筋肉が発達した部分に注入します。この治療法は安全性も高く、日常生活に支障を来すことも少ないといわれています。投与は何回でも行えます。汗を抑える作用もあり、脇汗・手の平・足裏の汗などを一時的に止める作用もあります。
+
+＊施術内容
+「スキンボトックス」は、低濃度のボツリヌストキシンを、皮膚の浅い層に広く分散させる施術です。以下のような効果が期待されます。
+
+＊効果のあらわれ方・副作用
+効果：小じわ・肌のハリ改善・皮脂・汗の分泌抑制（毛穴・ニキビの改善）・ナチュラルなリフトアップ効果
+効果のあらわれ: 1～2週間後に効果が出始め、3～4ヶ月後をピークに徐々に減少
+推奨メンテナンス: 約4～9ヶ月ごとに追加施術
+リスク・副作用：内出血、赤み、腫れが稀に1～2週間程度残る場合あり、ごく稀に左右差や、アレルギー、軽い頭痛等が生じる可能性がございます。
+
+＊医師確認が必要なケース
+以下に該当する場合は、施術を行えない、または慎重に検討する必要があります。
+妊娠中・授乳中の方
+神経・筋疾患（重症筋無力症など）をお持ちの方
+過度の日焼け、施術部位に重篤な皮膚炎・感染症がある方
+ボツリヌストキシン製剤に対するアレルギーをお持ちの方
+
+※ボトックスは熱に弱いので、本日は長時間の入浴・サウナ・運動をお控え下さい。
+※妊娠中･授乳中の方は治療を受けられません。また、妊娠する可能性がある方はボトックスの投与中及び最終投与後2回の月経を経るまでは避妊するようにして下さい。男性はボトックス投与中及び最終投与後の3ヶ月は避妊するようにして下さい。
+
+尚、治療中、治療後に予期しない合併症や後遺症が生じる可能性があります。
+勿論これらの予防と対策には十分配慮しますが、万一これらが生じた場合は、その治療に万全を尽くすと同時に、必要と判断された場合には、しかるべき医師に意見を求め、又は治療を依頼する事もあります。この点を予めご了承下さい。
+`
+  },
+  {
+    id: 'mounjaro', tag: '肥満治療', name: 'マンジャロ', accentColor: '#AE3A2E',
+    description: '週1回の自己注射により、食事量のコントロールを促します。',
+    bgImages: [],
+    consentText: `マンジャロは「GIP/GLP-1受容体作動薬」というお薬で、週1回の注射薬です。元々糖尿病治療薬として使われ、体重減少が副作用として生じることが分かりその作用をダイエットに利用した薬です。GIPとGLP-1は血糖値を下げる働きのあるホルモンで、膵臓に働きかけてインスリンの分泌を促進し、血糖値を低下させます。消化管の動きをゆっくりにするため、少ない食事量で満腹感と、満腹感の持続を感じ、食事量のコントロールが期待できます。また、血糖値が高いときにだけ働くため、副作用である低血糖が起こりにくく肝臓や脂肪細胞での脂肪分解を促進すると言われています。
+
+▼副作用
+【低血糖】
+低血糖症状として冷や汗、吐き気などが現れた場合は、ブドウ糖やブドウ糖を含むものを摂取して下さい。それでも症状が改善しない場合は医療機関を受診して下さい。食事は規則正しく摂取し、多量の飲酒、長時間の激しい運動、絶食は避け、低血糖を予防して下さい。
+
+【胃腸の不調】
+マンジャロには胃腸の動きを抑制することで消化をゆっくりにし、食欲を抑制する効果があります。使い始め、体が慣れるまでの間は吐き気やむかつき、便秘、下痢などの胃腸系症状が起こることがあります。その場合、お腹を圧迫させすぎないようにして下さい。ベルトは緩め、コルセットなど腰に巻いているものは外して下さい。便秘時には市販の便秘薬を併用いただいても構いません。また、就寝時のうつ伏せはお腹を圧迫するため避け、横向きでひざを曲げながら横になって下さい。また、食事に関しては消化に良いものを摂り、胃腸への負担を軽くするようにして下さい。さらに、下痢は体内の水分が多く排出されるため、普段よりも多めに水を飲むようにして下さい。使い続けることで症状は治まってきます。
+
+【その他】
+浮動性めまい、味覚異常、ごく稀に急性膵炎やアナフィラキシーショック、継続使用する場合、甲状腺腫瘍を引き起こす場合があります。万が一嘔吐を伴う継続的な激しい腹痛、呼吸が苦しい等の症状が生じた場合はすみやかに医療機関を受診して下さい。
+
+▼禁忌/注意事項
+以下に当てはまる方は処方が出来ません。現在治療中の病気がある場合は主治医にご相談下さい。 
+膵炎などの膵臓疾患の既往、甲状腺疾患の既往、重度の胃腸障害（胃潰瘍、炎症性腸疾患など）、 心機能・腎機能が低下している方、透析療法を受けている方 
+本剤の成分に対してアレルギーの既往歴がある方糖尿病薬、甲状腺機能低下症のお薬、ピル（経口避妊薬）、ワーファリンを服用中の方 
+大きな腹部手術、腸閉塞の既往がある方 
+うつ病をはじめとする精神疾患をお持ちの方 
+注射部位の近くに人工物が入っている方
+自動車の運転、高所作業をされる方 
+体脂肪率が男性15％未満、女性25％未満の方
+BMIが18未満の方18歳未満、70歳以上の方 
+妊娠中・授乳中・または妊活中の方 
+低血糖を起こす可能性が高い以下の状態の方 
+・脳下垂体機能不全または腎機能不全 
+・栄養不良状態、飢餓状態、食事摂取量の不足、不規則な食事摂取
+・過度のアルコール摂取者 
+
+記載事項に関して申告がない場合は、当院では一切の責任を負いかねます。 また、何らかの合併症が起きた場合にも、当院では責任を負いかねます。
+
+私は、マンジャロについて作用・副作用および安全性について十分に理解し、 マンジャロを受けることに同意いたします。
+`
+  },
+  {
+    id: 'laennec', tag: 'プラセンタ', name: 'ラエンネック', accentColor: '#C8823A',
+    description: 'ヒト胎盤由来の成分により、新陳代謝の活性化を目的とします。',
+    bgImages: [],
+    consentText: `
+    ラエンネックはヒトプラセンタ(胎盤)から様々な有効成分を抽出した医療品です。ラエンネックについて以下の説明を充分に理解した上で、本剤を投与することに同意されるか、されないかを、担当医師にお伝え下さい。
+
+ラエンネックの主な作用
+肝疾患の場合、ウイルスやアルコールで壊死した肝組織を修復します。
+幹細胞から個々の機能を持つ細胞への成熟を促します。
+細胞1個1個の組織呼吸や新陳代謝を高め、細胞機能を活性化します。
+肝臓などに沈着した脂肪の減少や幹細胞の脂肪変性を改善します。
+
+副作用
+稀に(発現率3.0%未満)、ラエンネックの注射により、過敏症(発疹・発熱・掻痒感など)の症状が現れる場合がありますので、もし本製品の投与を受けてこのような症状が出た場合、あるいは不安に思われた場合は、必ず担当医師にご相談下さい。
+
+ウイルスや細菌などに対する安全性
+ウイルスや細菌に汚染されているヒトプラセンタが本製品の原料に混在しないよう、本製品の製造にあたっては、次のような汚染防止対策をとっております。
+1.ドナースクリーニング
+2.受入検査
+3.高温(高圧蒸気)減菌処理
+4.製品試験
+このように3回にわたる検査や、減菌工程により、梅毒、結核、淋病、B型肝炎、C型肝炎、エイズ(後天性免疫不全症候群)、成人T細胞白血病、リンゴ病などの陰性を確認しており、ウイルス・細菌による本製品の汚染防止対策をとっております。
+
+病原性プリオンなどに対する安全性
+正常のプリオンが異変するには一定の時間が必要ですが、ヒトプラセンタは、約１０カ月の間しか母親の体内に留まる事のない極めて暫定的な組織です。また、本製品を含めヒトプラセンタを原料として製造されている医薬品の投与により、感染症が伝播したとの報告は、現在までに国内・海外ともにありません。
+しかし、変異性クロイツフェルト・ヤコブ病(ｖＣＪＤ)等の伝播のリスクを理論的には完全に否定することはできません。尚ラエンネックを含む人胎盤由来製剤使用者では、このことから献血を控える事が求められています。
+※実際には、昭和４９年発売開始以来、ラエンネック投与でＢ型肝炎、Ｃ型肝炎、エイズ、ｖＣＪＤなどの上記感染症が出た事はありません。
+
+私は、ラエンネックの以上のような有効性及び安全性等について理解しラエンネックを使用した治療を受ける事に同意します。
+`
+  },
+  {
+    id: 'monitor', tag: 'モニター', name: 'モニター同意書', accentColor: '#1C6B8A',
+    requiresSubProc: true,
+    description: 'モニター協力者向けの同意書です。対象施術名を入力して使用します。',
+    bgImages: [],
+    consentText: `モニター申込書及び承諾書
+
+
+　当院ではインフォームドコンセント（治療に対する説明と同意）に基づき、事前に十分な情報提供を行っています。手術の限界や経過の個人差などを含め十分な理解のもと、治療を申し込む前に自らの意思で選択するということを再度確認してください。尚、手術処置後の料金の返金や、コースのキャンセルには一切応じかねます。
+
+モニター契約のため、術前術術後の写真撮影及び診察時等動画撮影データ使用(HP/SNS/YouTube/口コミアプリ/広告媒体/院内資料等への掲載)について当院の指示に従っていただきます。
+ご提供いただいたデータの使用地域及び使用期間の制限はございません。
+当院と直接取り交わし致しました文書・書類等は他の方への公開・乱用はお控え頂きますようお願いいたします。（SNS等も含む）
+指示に従っていただけない場合は、違約金として本来必要である治療費をお支払いいただきますので予めご了承ください。
+当院による施術に関し、当院の債務不履行または不法行為により患者様に損害が生じた場合、当院は同損害の内、患者様の休業損害及び将来の収入減少を内容とする逸失利益については、損害賠償責任を負わないものとします。但し、当院に故意または重大な過失のある債務不履行または不法行為の場合には、当院は患者様の休業損害及び将来の収入減少を内容とする逸失利益についても損害賠償責任を負うものとします。
+
+　私は担当医と治療について話し合い、質問する機会が得られ、下記について納得しています。既往症・服用中の薬物に対する特異体質などの問診を受け、正直に申し上げました。また、希望する手術・治療の方法や経過、起こり得る合併症について十分な説明を受け、手術・治療の限界や経過の個人差などについても納得しました。従って、今回私が手術・治療を受けるにあたり、術後の薬の服用や必要に応じた通院及び治療についても納得し、貴クリニックの指示に従います。また、理由に乏しい主観的不満による異議申し立てをしません。
+　治療を受けるという決定は私自身が下したことであり強要されていません。さらに、私は上記のモニター契約の条件について、説明を受けて理解したうえで、モニター契約で施術を受けることに同意します。治療前に取りやめたくなった場合には承諾書を取り下げます。
+`
+  },
+  {
+    id: 'minor', tag: '未成年', name: '未成年者同意書', accentColor: '#7A3FA0',
+    requiresSubProc: true,
+    requiresGuardian: true,   /* ★ FIX3: 保護者署名欄を有効化するフラグ */
+    description: '18歳未満の方の施術に際し、保護者が署名する同意書です。',
+    bgImages: [],
+    consentText: `未成年者施術同意書
+
+■ 同意の主体
+この同意書は、患者（未成年者）の保護者（親権者または法定後見人）が記載・署名するものです。
+
+■ 保護者としての同意
+私は、患者の保護者として、当院における施術・検査・処置・投薬等すべての医療行為について、医師から十分な説明を受け、内容を理解した上で同意します。
+
+■ 未成年者への説明
+患者（未成年者）に対しても、年齢・理解度に応じた説明を行い、施術への協力を促します。
+
+■ 緊急時の対応
+施術中に患者の状態が急変した場合、院側の判断による緊急処置・救急搬送等に同意します。
+
+■ 費用負担
+施術に伴う費用は保護者が負担することに同意します。副作用が生じた場合の治療費についても同様とします。
+
+■ 個人情報の取り扱い
+患者・保護者の個人情報は、診療目的に限り使用し、法令に基づく場合を除き第三者に提供しません。`
+  },
+];
+</script>
+
+<!-- STEP 1 ─ ポータル -->
+<div class="screen" id="screen-s1">
+  <div class="header">
+    <div class="header-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <div class="header-text"><h1>電子同意書システム</h1><p>施術を選択して署名へ進んでください</p></div>
+    <div class="step-indicator">
+      <div class="step-pip"><div class="step-pip-dot active">1</div><div class="step-pip-label">施術</div></div>
+      <div class="step-connector"></div>
+      <div class="step-pip"><div class="step-pip-dot">2</div><div class="step-pip-label">医師</div></div>
+      <div class="step-connector"></div>
+      <div class="step-pip"><div class="step-pip-dot">3</div><div class="step-pip-label">署名</div></div>
+    </div>
+  </div>
+  <div class="portal-body">
+    <p class="section-label">施術メニュー</p>
+    <div class="proc-grid" id="proc-grid"></div>
+  </div>
+</div>
+
+<!-- STEP 2 ─ 入力画面 -->
+<div class="screen hidden" id="screen-s2">
+  <div class="header">
+    <div class="header-icon" id="s2-icon"><svg viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
+    <div class="header-text"><h1>STEP 2｜情報の入力</h1><p>説明医師を選択してください</p></div>
+    <div class="step-indicator">
+      <div class="step-pip"><div class="step-pip-dot done">✓</div><div class="step-pip-label">施術</div></div>
+      <div class="step-connector done"></div>
+      <div class="step-pip"><div class="step-pip-dot active">2</div><div class="step-pip-label">医師</div></div>
+      <div class="step-connector"></div>
+      <div class="step-pip"><div class="step-pip-dot">3</div><div class="step-pip-label">署名</div></div>
+    </div>
+    <button class="btn-back" id="s2-back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>戻る</button>
+  </div>
+  <div class="input-body">
+    <div class="selected-proc-chip" id="s2-proc-chip">
+      <div class="chip-accent" id="s2-chip-accent"></div>
+      <div class="chip-text">
+        <div class="chip-label">選択中の同意書</div>
+        <div class="chip-name" id="s2-proc-name">─</div>
+      </div>
+    </div>
+    <div class="field-group">
+      <div class="field hidden-field" id="field-sub-proc">
+        <div class="sub-proc-banner">
+          <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>この同意書は複数の施術で共用します。<br>今回の<strong>対象施術名</strong>を入力してください。PDFに印字されます。</span>
+        </div>
+        <label class="field-label" for="sub-proc-input">対象施術名<span class="required-badge">必須</span></label>
+        <input type="text" id="sub-proc-input" class="text-input" placeholder="例：ボトックス注入、医療脱毛" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+        <p class="field-hint">※ 施術名はPDFの同意書タイトル下に印字されます</p>
+      </div>
+      <div class="field">
+        <label class="field-label" for="doctor-select">説明医師<span class="required-badge">必須</span></label>
+        <div class="select-wrap">
+          <select id="doctor-select" class="placeholder-selected">
+            <option value="" disabled selected>── 担当医師を選択してください ──</option>
+          </select>
+        </div>
+        <p class="field-hint">※ 医師名は DOCTORS 配列で追加・変更できます</p>
+      </div>
+      <div class="field">
+        <label class="field-label" for="patient-input">患者名<span class="optional-badge">任意</span></label>
+        <input type="text" id="patient-input" class="text-input" placeholder="例：山田 太郎" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      </div>
+    </div>
+    <button class="btn-next" id="s2-next">
+      <svg viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+      署名画面へ進む
+    </button>
+  </div>
+</div>
+
+<!-- STEP 3 ─ 署名画面 -->
+<div class="screen hidden" id="screen-s3">
+  <div class="header">
+    <div class="header-icon" id="s3-icon"><svg viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></div>
+    <div class="header-text"><h1>STEP 3｜署名</h1><p>内容を確認し、下の欄にご署名ください</p></div>
+    <div class="step-indicator">
+      <div class="step-pip"><div class="step-pip-dot done">✓</div><div class="step-pip-label">施術</div></div>
+      <div class="step-connector done"></div>
+      <div class="step-pip"><div class="step-pip-dot done">✓</div><div class="step-pip-label">医師</div></div>
+      <div class="step-connector done"></div>
+      <div class="step-pip"><div class="step-pip-dot active">3</div><div class="step-pip-label">署名</div></div>
+    </div>
+    <button class="btn-back" id="s3-back"><svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>戻る</button>
+  </div>
+
+  <div class="info-bar">
+    <div class="info-bar-item"><div class="info-bar-item-label">同意書</div><div class="info-bar-item-value" id="ib-proc">─</div></div>
+    <div class="info-bar-item" id="ib-subproc-wrap" style="display:none"><div class="info-bar-item-label">対象施術</div><div class="info-bar-item-value" id="ib-subproc">─</div></div>
+    <div class="info-bar-item"><div class="info-bar-item-label">説明医師</div><div class="info-bar-item-value" id="ib-doctor">─</div></div>
+    <div class="info-bar-item date"><div class="info-bar-item-label">署名日</div><div class="info-bar-item-value" id="ib-date">─</div></div>
+    <button class="btn-sig-toggle" id="btn-sig-toggle">
+      <svg id="sig-toggle-icon" viewBox="0 0 24 24"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+      <span id="sig-toggle-label">署名欄を隠す</span>
+    </button>
+  </div>
+
+  <!-- 同意書ビューポート -->
+  <div class="doc-wrap" id="doc-wrap">
+    <div class="doc-viewport" id="doc-viewport"></div>
+    <div class="doc-drag-overlay" id="doc-drag-overlay">
+      <div class="drag-hint" id="drag-hint">📌 名前をドラッグして印字位置を調整</div>
+      <div class="drag-chip" id="drag-doctor" style="left:55%;top:8%">
+        <div class="drag-chip-handle"></div><span class="drag-chip-icon">⚕</span>
+        <div><div class="drag-chip-label">説明医師</div><div class="drag-chip-value" id="drag-doctor-text">─</div></div>
+      </div>
+      <div class="drag-chip" id="drag-patient" style="left:55%;top:16%">
+        <div class="drag-chip-handle"></div><span class="drag-chip-icon">👤</span>
+        <div><div class="drag-chip-label">患者名</div><div class="drag-chip-value" id="drag-patient-text">─</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 署名パネル -->
+  <div class="sig-panel" id="sig-panel">
+
+    <!-- ── 患者署名 ── -->
+    <div class="sig-meta">
+      <div class="sig-label"><span class="sig-dot" id="sig-dot"></span><span id="sig-panel-label">患者様 署名欄</span></div>
+      <div class="sig-status" id="sig-status">
+        <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>署名完了
+      </div>
+    </div>
+    <div class="canvas-wrap" id="canvas-wrap">
+      <canvas id="sig-canvas"></canvas>
+      <div class="canvas-guide"><span>Apple Pencil / 指でご署名ください</span></div>
+      <div class="sig-line"></div><div class="sig-line-label">Patient / Guardian Signature</div>
+    </div>
+
+    <!-- ★ FIX3: 保護者署名セクション（未成年のみ表示） -->
+    <div class="guardian-sig-section" id="guardian-sig-section">
+      <div class="sig-meta">
+        <div class="sig-label">
+          <span class="sig-dot" id="guardian-sig-dot"></span>
+          <span>保護者（親権者）署名欄</span>
+          <span style="font-size:0.6rem;font-weight:700;background:#F3EAF8;color:#7A3FA0;padding:1px 7px;border-radius:20px;margin-left:4px;">未成年者同意書</span>
+        </div>
+        <div class="sig-status guardian-status" id="guardian-sig-status">
+          <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>署名完了
+        </div>
+      </div>
+      <div class="canvas-wrap" id="guardian-canvas-wrap">
+        <canvas id="guardian-sig-canvas"></canvas>
+        <div class="canvas-guide"><span>保護者様がご署名ください</span></div>
+        <div class="sig-line"></div><div class="sig-line-label">Guardian Signature</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-clear guardian-clear" id="guardian-btn-clear">
+          <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.96"/></svg>
+          保護者欄消去
+        </button>
+      </div>
+    </div>
+
+    <!-- アクション -->
+    <div class="actions">
+      <button class="btn btn-clear" id="btn-clear">
+        <svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.96"/></svg>
+        消去
+      </button>
+      <button class="btn btn-save" id="btn-save" disabled>
+        <div class="spinner"></div>
+        <svg class="save-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        PDF 保存してSTEP 1へ戻る
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+
+/* ── DOM refs ── */
+const SS1              = document.getElementById('screen-s1');
+const SS2              = document.getElementById('screen-s2');
+const SS3              = document.getElementById('screen-s3');
+const procGrid         = document.getElementById('proc-grid');
+const s2Icon           = document.getElementById('s2-icon');
+const s2ProcName       = document.getElementById('s2-proc-name');
+const s2Accent         = document.getElementById('s2-chip-accent');
+const s3Icon           = document.getElementById('s3-icon');
+const docViewport      = document.getElementById('doc-viewport');
+const ibProc           = document.getElementById('ib-proc');
+const ibSubprocWrap    = document.getElementById('ib-subproc-wrap');
+const ibSubproc        = document.getElementById('ib-subproc');
+const ibDoctor         = document.getElementById('ib-doctor');
+const ibDate           = document.getElementById('ib-date');
+const doctorSel        = document.getElementById('doctor-select');
+const patientIn        = document.getElementById('patient-input');
+const subProcField     = document.getElementById('field-sub-proc');
+const subProcIn        = document.getElementById('sub-proc-input');
+const sigPanelEl       = document.getElementById('sig-panel');
+const btnSigToggle     = document.getElementById('btn-sig-toggle');
+const sigToggleLabel   = document.getElementById('sig-toggle-label');
+const sigToggleIcon    = document.getElementById('sig-toggle-icon');
+const sigPanelLabel    = document.getElementById('sig-panel-label');
+const canvasWrap       = document.getElementById('canvas-wrap');
+const sigCanvas        = document.getElementById('sig-canvas');
+const guardianSection  = document.getElementById('guardian-sig-section');
+const guardianWrap     = document.getElementById('guardian-canvas-wrap');
+const guardianCanvas   = document.getElementById('guardian-sig-canvas');
+const guardianDot      = document.getElementById('guardian-sig-dot');
+const guardianStatus   = document.getElementById('guardian-sig-status');
+const btnClear         = document.getElementById('btn-clear');
+const guardianBtnClear = document.getElementById('guardian-btn-clear');
+const btnSave          = document.getElementById('btn-save');
+const sigDot           = document.getElementById('sig-dot');
+const sigStatus        = document.getElementById('sig-status');
+const toastEl          = document.getElementById('toast');
+const docDragOverlay   = document.getElementById('doc-drag-overlay');
+const dragDoctorChip   = document.getElementById('drag-doctor');
+const dragPatientChip  = document.getElementById('drag-patient');
+const dragDoctorText   = document.getElementById('drag-doctor-text');
+const dragPatientText  = document.getElementById('drag-patient-text');
+const dragHint         = document.getElementById('drag-hint');
+
+/* ── ★ FIX1: selectstart を preventDefault してテキスト選択を完全ブロック ── */
+[sigCanvas, guardianCanvas, canvasWrap, guardianWrap].forEach(el => {
+  el.addEventListener('selectstart', e => e.preventDefault());
+});
+document.addEventListener('selectstart', e => {
+  if (e.target.closest('.sig-panel, .canvas-wrap')) e.preventDefault();
+});
+
+/* ── ドラッグチップ ── */
+let chipPos = { doctor:{xPct:0.55,yPct:0.08}, patient:{xPct:0.55,yPct:0.18} };
+function initDragChips() { setupChipDrag(dragDoctorChip,'doctor'); setupChipDrag(dragPatientChip,'patient'); }
+function setupChipDrag(chip, key) {
+  let dragging=false,ox=0,oy=0;
+  chip.addEventListener('pointerdown', e=>{e.preventDefault();e.stopPropagation();dragging=true;chip.setPointerCapture(e.pointerId);const cr=chip.getBoundingClientRect();ox=e.clientX-cr.left;oy=e.clientY-cr.top;chip.style.cursor='grabbing';},{passive:false});
+  chip.addEventListener('pointermove', e=>{if(!dragging)return;e.preventDefault();const r=docDragOverlay.getBoundingClientRect();let nx=Math.max(0,Math.min(e.clientX-r.left-ox,r.width-chip.offsetWidth));let ny=Math.max(0,Math.min(e.clientY-r.top-oy,r.height-chip.offsetHeight));chip.style.left=nx+'px';chip.style.top=ny+'px';chipPos[key]={xPct:nx/r.width,yPct:ny/r.height};},{passive:false});
+  const end=()=>{dragging=false;chip.style.cursor='grab';};
+  chip.addEventListener('pointerup',end);chip.addEventListener('pointercancel',end);
+}
+initDragChips();
+
+/* ── アプリ状態 ── */
+let selProc    = null;
+let selDoctor  = null;
+let patientName= '';
+let subProcName= '';
+let hasSig        = false;
+let hasGuardianSig= false;
+let sigVisible    = true;   /* 署名欄の表示状態 */
+let rafId         = null;
+
+/* ── 署名欄トグル ── */
+function setSigVisible(visible) {
+  sigVisible = visible;
+  sigPanelEl.classList.toggle('sig-collapsed', !visible);
+  if (visible) {
+    sigToggleIcon.innerHTML = '<path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>';
+    sigToggleLabel.textContent = '署名欄を隠す';
+  } else {
+    sigToggleIcon.innerHTML = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>';
+    sigToggleLabel.textContent = '署名欄を表示';
+  }
+  updateSaveBtn();
+}
+btnSigToggle.addEventListener('click', () => setSigVisible(!sigVisible));
+let guardianRafId = null;
+
+/* ── ユーティリティ ── */
+const hexAlpha=(hex,a)=>{const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);return `rgba(${r},${g},${b},${a})`;};
+const fmtDate=d=>d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric'});
+const fmtDateShort=d=>{const z=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${z(d.getMonth()+1)}${z(d.getDate())}`;};
+const fmtTime=d=>{const z=n=>String(n).padStart(2,'0');return `${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;};
+
+/* ── 医師セレクト ── */
+function buildDoctorOptions(){
+  while(doctorSel.options.length>1)doctorSel.remove(1);
+  DOCTORS.forEach(d=>{const o=document.createElement('option');o.value=d.id;o.textContent=d.name+' 先生';doctorSel.appendChild(o);});
+}
+doctorSel.addEventListener('change',()=>{const v=doctorSel.value;doctorSel.classList.toggle('placeholder-selected',!v);doctorSel.classList.remove('error');selDoctor=v?DOCTORS.find(d=>d.id===v)||null:null;});
+
+/* ── STEP 1: ポータル ── */
+function buildPortal(){
+  procGrid.innerHTML='';
+  PROCEDURES.forEach(proc=>{
+    const ac=proc.accentColor||'#2A6B6B';const hasImg=proc.bgImages&&proc.bgImages.length>0;
+    const card=document.createElement('div');card.className='proc-card';card.setAttribute('role','button');
+    card.innerHTML=`
+      <div class="proc-thumb" style="background:${hexAlpha(ac,0.14)}">
+        ${hasImg?`<img src="${proc.bgImages[0]}" alt="" loading="lazy" onerror="this.style.display='none'">`:`<div class="proc-thumb-ph"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="12" y2="17"/></svg></div>`}
+      </div>
+      <div class="proc-body">
+        <span class="proc-tag" style="background:${hexAlpha(ac,0.13)};color:${ac}">${proc.tag}</span>
+        <div class="proc-name">${proc.name}</div><div class="proc-desc">${proc.description}</div>
+        <div class="proc-footer"><span class="proc-cta-text" style="color:${ac}">選択する →</span><div class="proc-arrow" style="background:${ac}">→</div></div>
+      </div>`;
+    let _tx=0,_ty=0;
+    card.addEventListener('touchstart',e=>{_tx=e.touches[0].clientX;_ty=e.touches[0].clientY;},{passive:true});
+    card.addEventListener('touchend',e=>{if(Math.abs(e.changedTouches[0].clientX-_tx)<10&&Math.abs(e.changedTouches[0].clientY-_ty)<10){e.preventDefault();goToStep2(proc);}},{passive:false});
+    card.addEventListener('click',()=>goToStep2(proc));
+    procGrid.appendChild(card);
+  });
+}
+
+/* ── STEP 1 → STEP 2 ── */
+function goToStep2(proc){
+  selProc=proc;selDoctor=null;patientName='';subProcName='';
+  const ac=proc.accentColor||'#2A6B6B';
+  s2Icon.style.background=ac;s2Accent.style.background=ac;s2ProcName.textContent=proc.name;
+  subProcField.classList.toggle('hidden-field',!proc.requiresSubProc);
+  doctorSel.value='';doctorSel.classList.add('placeholder-selected');doctorSel.classList.remove('error');
+  patientIn.value='';subProcIn.value='';subProcIn.classList.remove('error');
+  transition(SS1,SS2);
+}
+document.getElementById('s2-back').addEventListener('click',()=>{selProc=null;transition(SS2,SS1);});
+
+/* ── STEP 2 → STEP 3（バリデーション） ── */
+document.getElementById('s2-next').addEventListener('click',()=>{
+  let valid=true;
+  if(selProc&&selProc.requiresSubProc&&!subProcIn.value.trim()){
+    subProcIn.classList.add('error');showToast('対象施術名を入力してください','error');
+    subProcIn.focus();setTimeout(()=>subProcIn.classList.remove('error'),1200);valid=false;
+  }
+  if(!selDoctor){
+    doctorSel.classList.add('error');if(valid)showToast('説明医師を選択してください','error');
+    doctorSel.focus();setTimeout(()=>doctorSel.classList.remove('error'),1200);valid=false;
+  }
+  if(!valid)return;
+  patientName=patientIn.value.trim();
+  subProcName=selProc.requiresSubProc?subProcIn.value.trim():'';
+  goToStep3();
+});
+
+/* ── STEP 3: 署名画面セットアップ ── */
+function goToStep3(){
+  const ac=selProc.accentColor||'#2A6B6B';
+  s3Icon.style.background=ac;
+  ibProc.textContent=selProc.name;ibDoctor.textContent=selDoctor.name+' 先生';ibDate.textContent=fmtDate(new Date());
+  if(subProcName){ibSubprocWrap.style.display='';ibSubproc.textContent=subProcName;}
+  else{ibSubprocWrap.style.display='none';}
+
+  /* 新しい施術に入るたびに署名欄を表示状態にリセット */
+  setSigVisible(true);
+
+  /* ★ FIX3: requiresGuardian のとき保護者セクション表示 */
+  const needsGuardian = !!(selProc.requiresGuardian);
+  guardianSection.classList.toggle('visible', needsGuardian);
+  canvasWrap.classList.toggle('small', needsGuardian);
+  guardianWrap.classList.toggle('small', needsGuardian);
+  sigPanelLabel.textContent = needsGuardian ? '患者様（未成年者）署名欄' : '患者様 署名欄';
+
+  /* ドラッグチップ */
+  dragDoctorText.textContent=selDoctor.name+' 先生';
+  dragPatientText.textContent=patientName||'（患者名未入力）';
+  dragPatientChip.style.display=patientName?'flex':'none';
+  const hasImages=selProc.bgImages&&selProc.bgImages.length>0;
+  dragDoctorChip.style.display=hasImages?'flex':'none';
+  if(hasImages){setTimeout(()=>{const r=docDragOverlay.getBoundingClientRect();const s=(chip,key,xPct,yPct)=>{chip.style.left=Math.round(xPct*r.width)+'px';chip.style.top=Math.round(yPct*r.height)+'px';chipPos[key]={xPct,yPct};};s(dragDoctorChip,'doctor',0.52,0.08);s(dragPatientChip,'patient',0.52,0.18);dragHint.classList.add('show');setTimeout(()=>dragHint.classList.remove('show'),3000);},120);}
+
+  renderDocContent(selProc);
+  clearCanvas();
+  clearGuardianCanvas();
+  transition(SS2,SS3);
+  docViewport.scrollTop=0;
+  setTimeout(()=>{resizeCanvas();resizeGuardianCanvas();},60);
+}
+document.getElementById('s3-back').addEventListener('click',()=>{
+  transition(SS3,SS2);
+  if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+  if(guardianRafId){cancelAnimationFrame(guardianRafId);guardianRafId=null;}
+});
+
+/* ── 同意書テキストレンダリング ── */
+function renderDocContent(proc){
+  docViewport.innerHTML='';
+  docViewport.style.background='#DAD7D2';
+
+  if(proc.bgImages&&proc.bgImages.length>0){
+    proc.bgImages.forEach((url,i)=>{
+      const img=document.createElement('img');img.className='doc-page-img';img.src=url;
+      img.alt=`${proc.name} ${i+1}ページ`;img.loading=i===0?'eager':'lazy';img.draggable=false;
+      img.onerror=()=>img.replaceWith(makeErrPlaceholder(url));
+      docViewport.appendChild(img);
+    });
+    return;
+  }
+
+  /* ★ FIX2: overflow:hidden を削除、flex-shrink:0 を追加したクラスを使用 */
+  const wrap=document.createElement('div');
+  wrap.className='doc-text-wrap';
+
+  const ac=proc.accentColor||'#2A6B6B';
+  const titleBar=document.createElement('div');
+  titleBar.style.cssText=`background:${ac};padding:20px 28px 16px;border-radius:10px 10px 0 0;`;
+  const titleH=document.createElement('div');
+  titleH.style.cssText='font-family:"Shippori Mincho",serif;font-size:1.25rem;font-weight:700;color:#fff;letter-spacing:0.04em;';
+  titleH.textContent=proc.name;titleBar.appendChild(titleH);
+  if(subProcName){
+    const sl=document.createElement('div');
+    sl.style.cssText='font-size:0.8rem;color:rgba(255,255,255,0.85);margin-top:5px;display:flex;align-items:center;gap:6px;';
+    sl.innerHTML=`<span style="background:rgba(255,255,255,0.25);padding:2px 8px;border-radius:20px;font-size:0.7rem;font-weight:700;">対象施術</span>${subProcName}`;
+    titleBar.appendChild(sl);
+  }
+  wrap.appendChild(titleBar);
+
+  const body=document.createElement('div');
+  body.style.cssText='padding:28px 28px 32px;line-height:1.85;font-size:14px;color:#2C2C2C;white-space:pre-wrap;user-select:none;-webkit-user-select:none;';
+  body.textContent=proc.consentText||'同意書の内容が設定されていません。';
+  wrap.appendChild(body);
+  docViewport.appendChild(wrap);
+}
+
+function makeErrPlaceholder(url){
+  const d=document.createElement('div');d.className='doc-placeholder';
+  d.innerHTML=`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>画像読み込み失敗<br><code>${url}</code></p>`;
+  return d;
+}
+
+function transition(from,to){from.classList.add('hidden');to.classList.remove('hidden');}
+
+/* ══════════════════════════════════════════
+   ★ FIX1: Canvas 描画エンジン（患者署名）
+   ── テキスト選択を完全ブロックするために
+      touch-action:none、user-select:none を
+      CSS とイベント両面で設定済み
+══════════════════════════════════════════ */
+const ctx=sigCanvas.getContext('2d',{willReadFrequently:false});
+let dpr=window.devicePixelRatio||1;
+
+function resizeCanvas(){
+  const w=canvasWrap.offsetWidth,h=canvasWrap.offsetHeight;if(!w||!h)return;
+  dpr=window.devicePixelRatio||1;
+  let saved=null;if(hasSig&&sigCanvas.width>0)try{saved=ctx.getImageData(0,0,sigCanvas.width,sigCanvas.height);}catch(_){}
+  sigCanvas.width=Math.round(w*dpr);sigCanvas.height=Math.round(h*dpr);
+  sigCanvas.style.width=w+'px';sigCanvas.style.height=h+'px';
+  ctx.scale(dpr,dpr);applyStyle();if(saved)ctx.putImageData(saved,0,0);
+}
+function applyStyle(){ctx.lineCap='round';ctx.lineJoin='round';ctx.strokeStyle='#1A1A1A';}
+window.addEventListener('resize',()=>{resizeCanvas();resizeGuardianCanvas();});
+window.addEventListener('orientationchange',()=>setTimeout(()=>{resizeCanvas();resizeGuardianCanvas();},420));
+
+const LW_MIN=1.0,LW_MAX=4.2;
+let points=[],isDrawing=false,needsDraw=false;
+const getPos=e=>{const r=sigCanvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure>0?e.pressure:0.5};};
+const lw=p=>LW_MIN+(LW_MAX-LW_MIN)*Math.min(p*1.9,1);
+
+sigCanvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();sigCanvas.setPointerCapture(e.pointerId);
+  isDrawing=true;points=[];const pos=getPos(e);points.push(pos);
+  ctx.beginPath();ctx.arc(pos.x,pos.y,lw(pos.p)/2,0,Math.PI*2);ctx.fillStyle='#1A1A1A';ctx.fill();
+  setSigState(true);canvasWrap.classList.add('active');
+  if(!rafId)rafId=requestAnimationFrame(rafLoop);
+},{passive:false});
+
+sigCanvas.addEventListener('pointermove',e=>{
+  if(!isDrawing)return;e.preventDefault();
+  const evts=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  for(const ev of evts){const pos=getPos(ev),last=points[points.length-1];if(last){const dx=pos.x-last.x,dy=pos.y-last.y;if(dx*dx+dy*dy<0.09)continue;}points.push(pos);}
+  needsDraw=true;
+},{passive:false});
+
+const endStroke=e=>{if(!isDrawing)return;isDrawing=false;if(e)points.push(getPos(e));needsDraw=true;canvasWrap.classList.remove('active');};
+sigCanvas.addEventListener('pointerup',endStroke,{passive:false});
+sigCanvas.addEventListener('pointercancel',endStroke,{passive:false});
+sigCanvas.addEventListener('contextmenu',e=>e.preventDefault());
+
+function rafLoop(){if(needsDraw&&points.length>1){flushPoints();needsDraw=false;}rafId=requestAnimationFrame(rafLoop);}
+function flushPoints(){
+  if(points.length<2)return;applyStyle();
+  for(let i=1;i<points.length;i++){
+    const p0=points[i-1],p1=points[i];ctx.lineWidth=lw((p0.p+p1.p)/2);ctx.beginPath();
+    if(i>=2){const prev=points[i-2];const m0={x:(prev.x+p0.x)/2,y:(prev.y+p0.y)/2};const m1={x:(p0.x+p1.x)/2,y:(p0.y+p1.y)/2};ctx.moveTo(m0.x,m0.y);ctx.quadraticCurveTo(p0.x,p0.y,m1.x,m1.y);}
+    else{ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);}ctx.stroke();
+  }points=points.slice(-2);
+}
+function clearCanvas(){ctx.clearRect(0,0,sigCanvas.width/dpr,sigCanvas.height/dpr);points=[];setSigState(false);}
+function setSigState(on){
+  hasSig=on;canvasWrap.classList.toggle('has-sig',on);
+  sigDot.classList.toggle('active',on);sigStatus.classList.toggle('show',on);
+  updateSaveBtn();
+}
+btnClear.addEventListener('click',clearCanvas);
+
+/* ══════════════════════════════════════════
+   ★ FIX3: Canvas 描画エンジン（保護者署名）
+══════════════════════════════════════════ */
+const gCtx=guardianCanvas.getContext('2d',{willReadFrequently:false});
+let gDpr=window.devicePixelRatio||1;
+let gPoints=[],gIsDrawing=false,gNeedsDraw=false;
+
+function resizeGuardianCanvas(){
+  const w=guardianWrap.offsetWidth,h=guardianWrap.offsetHeight;if(!w||!h)return;
+  gDpr=window.devicePixelRatio||1;
+  let saved=null;if(hasGuardianSig&&guardianCanvas.width>0)try{saved=gCtx.getImageData(0,0,guardianCanvas.width,guardianCanvas.height);}catch(_){}
+  guardianCanvas.width=Math.round(w*gDpr);guardianCanvas.height=Math.round(h*gDpr);
+  guardianCanvas.style.width=w+'px';guardianCanvas.style.height=h+'px';
+  gCtx.scale(gDpr,gDpr);applyGuardianStyle();if(saved)gCtx.putImageData(saved,0,0);
+}
+function applyGuardianStyle(){gCtx.lineCap='round';gCtx.lineJoin='round';gCtx.strokeStyle='#1A1A1A';}
+
+const gGetPos=e=>{const r=guardianCanvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure>0?e.pressure:0.5};};
+
+guardianCanvas.addEventListener('pointerdown',e=>{
+  e.preventDefault();guardianCanvas.setPointerCapture(e.pointerId);
+  gIsDrawing=true;gPoints=[];const pos=gGetPos(e);gPoints.push(pos);
+  gCtx.beginPath();gCtx.arc(pos.x,pos.y,lw(pos.p)/2,0,Math.PI*2);gCtx.fillStyle='#1A1A1A';gCtx.fill();
+  setGuardianSigState(true);guardianWrap.classList.add('guardian-active');
+  if(!guardianRafId)guardianRafId=requestAnimationFrame(gRafLoop);
+},{passive:false});
+
+guardianCanvas.addEventListener('pointermove',e=>{
+  if(!gIsDrawing)return;e.preventDefault();
+  const evts=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+  for(const ev of evts){const pos=gGetPos(ev),last=gPoints[gPoints.length-1];if(last){const dx=pos.x-last.x,dy=pos.y-last.y;if(dx*dx+dy*dy<0.09)continue;}gPoints.push(pos);}
+  gNeedsDraw=true;
+},{passive:false});
+
+const gEndStroke=e=>{if(!gIsDrawing)return;gIsDrawing=false;if(e)gPoints.push(gGetPos(e));gNeedsDraw=true;guardianWrap.classList.remove('guardian-active');};
+guardianCanvas.addEventListener('pointerup',gEndStroke,{passive:false});
+guardianCanvas.addEventListener('pointercancel',gEndStroke,{passive:false});
+guardianCanvas.addEventListener('contextmenu',e=>e.preventDefault());
+guardianCanvas.addEventListener('selectstart',e=>e.preventDefault());
+
+function gRafLoop(){if(gNeedsDraw&&gPoints.length>1){gFlushPoints();gNeedsDraw=false;}guardianRafId=requestAnimationFrame(gRafLoop);}
+function gFlushPoints(){
+  if(gPoints.length<2)return;applyGuardianStyle();
+  for(let i=1;i<gPoints.length;i++){
+    const p0=gPoints[i-1],p1=gPoints[i];gCtx.lineWidth=lw((p0.p+p1.p)/2);gCtx.beginPath();
+    if(i>=2){const prev=gPoints[i-2];const m0={x:(prev.x+p0.x)/2,y:(prev.y+p0.y)/2};const m1={x:(p0.x+p1.x)/2,y:(p0.y+p1.y)/2};gCtx.moveTo(m0.x,m0.y);gCtx.quadraticCurveTo(p0.x,p0.y,m1.x,m1.y);}
+    else{gCtx.moveTo(p0.x,p0.y);gCtx.lineTo(p1.x,p1.y);}gCtx.stroke();
+  }gPoints=gPoints.slice(-2);
+}
+function clearGuardianCanvas(){gCtx.clearRect(0,0,guardianCanvas.width/gDpr,guardianCanvas.height/gDpr);gPoints=[];setGuardianSigState(false);}
+function setGuardianSigState(on){
+  hasGuardianSig=on;guardianWrap.classList.toggle('has-sig',on);
+  guardianDot.classList.toggle('guardian-active',on);guardianStatus.classList.toggle('show',on);
+  updateSaveBtn();
+}
+guardianBtnClear.addEventListener('click',clearGuardianCanvas);
+
+/* 保存ボタン有効条件:
+   - showSignature:false → 署名不要なので即時有効
+   - 通常: 患者署名あり
+   - 未成年: 患者署名 AND 保護者署名の両方あり */
+function updateSaveBtn(){
+  /* 署名欄が隠れているときは署名なしで保存可能 */
+  if (!sigVisible) { btnSave.disabled = false; return; }
+  const needsGuardian = !!(selProc && selProc.requiresGuardian);
+  btnSave.disabled = needsGuardian ? !(hasSig && hasGuardianSig) : !hasSig;
+}
+
+/* ── PDF 生成 ── */
+btnSave.addEventListener('click',async()=>{
+  if(!selProc||!selDoctor)return;
+  const needsGuardian = !!(selProc.requiresGuardian);
+  /* 署名欄が表示中のときだけ署名を必須チェック */
+  if(sigVisible && (!hasSig||(needsGuardian&&!hasGuardianSig)))return;
+
+  btnSave.classList.add('loading');btnSave.disabled=true;
+  try{
+    const{jsPDF}=window.jspdf;
+    const A4W=210,A4H=297,ML=8,MR=8;
+    const now=new Date();
+    const sigPng      = sigVisible ? sigCanvas.toDataURL('image/png') : null;
+    const guardianPng = (sigVisible&&needsGuardian) ? guardianCanvas.toDataURL('image/png') : null;
+    const doc=new jsPDF({orientation:'p',unit:'mm',format:'a4'});
+
+    if(selProc.bgImages&&selProc.bgImages.length>0){
+      for(let pi=0;pi<selProc.bgImages.length;pi++){
+        if(pi>0)doc.addPage('a4','p');
+        let bg=null;try{bg=await imgToBase64(selProc.bgImages[pi]);}catch(_){}
+        if(bg){const sc=Math.min(A4W/bg.w,A4H/bg.h),dw=bg.w*sc,dh=bg.h*sc;doc.addImage(bg.data,'JPEG',(A4W-dw)/2,(A4H-dh)/2,dw,dh);}
+        if(pi===selProc.bgImages.length-1){
+          await addInfoOverlay(doc,now,A4W,A4H,ML,MR,bg?bg.w:A4W,bg?bg.h:A4H);
+          if(sigVisible) addSignatureBlock(doc,sigPng,guardianPng,now,A4W,A4H,ML,MR);
+        }
+      }
+    }else{
+      await buildFallbackPdf(doc,now,sigPng,guardianPng,A4W,A4H,ML,MR,sigVisible);
+    }
+
+    doc.save(makeFilename(selProc.name,now));
+    showToast('✓ PDFを保存しました。STEP 1 へ戻ります','ok');
+    setTimeout(()=>{
+      transition(SS3,SS1);clearCanvas();clearGuardianCanvas();
+      selProc=selDoctor=null;patientName='';subProcName='';
+      if(rafId){cancelAnimationFrame(rafId);rafId=null;}
+      if(guardianRafId){cancelAnimationFrame(guardianRafId);guardianRafId=null;}
+    },1600);
+  }catch(err){
+    console.error('PDF Error:',err);showToast('PDFの生成に失敗しました','error');
+  }finally{
+    btnSave.classList.remove('loading');updateSaveBtn();
+  }
+});
+
+/* ── 日本語テキスト → PNG ── */
+async function jpTextImg(text,{size=12,weight=500,color='#1A1A1A',bg=null,padX=10,padY=6}={}){
+  await document.fonts.ready;const SC=2,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
+  const tmp=document.createElement('canvas');const tc=tmp.getContext('2d');tc.font=font;
+  const tw=Math.ceil(tc.measureText(text).width);const cW=tw+padX*2*SC,cH=(size+padY*2)*SC;
+  tmp.width=cW;tmp.height=cH;const c=tmp.getContext('2d');
+  if(bg){c.fillStyle=bg;c.beginPath();c.roundRect(0,0,cW,cH,4*SC);c.fill();}
+  c.font=font;c.fillStyle=color;c.textBaseline='top';c.fillText(text,padX*SC,padY*SC);
+  return{url:tmp.toDataURL('image/png'),wMm:cW/SC*0.35,hMm:cH/SC*0.35};
+}
+
+/* ── PDF オーバーレイ ── */
+async function addInfoOverlay(doc,now,pw,ph,ml,mr,bgW,bgH){
+  const sc=bgW&&bgH?Math.min(pw/bgW,ph/bgH):1;
+  const dw=bgW?bgW*sc:pw,dh=bgH?bgH*sc:ph;const ox=(pw-dw)/2,oy=(ph-dh)/2;
+  const toX=p=>ox+p*dw,toY=p=>oy+p*dh;
+  {const dp=chipPos.doctor;const bx=toX(dp.xPct),by=toY(dp.yPct);
+    const img=await jpTextImg(`説明医師：${selDoctor.name} 先生`,{size:10,weight:600,color:'#1A1A1A',bg:'rgba(255,255,255,0.88)',padX:6,padY:4});
+    doc.setFillColor(42,107,107);doc.rect(bx-0.5,by,2,img.hMm,'F');doc.addImage(img.url,'PNG',bx+2,by,img.wMm,img.hMm);}
+  if(patientName){const pp=chipPos.patient;const bx=toX(pp.xPct),by=toY(pp.yPct);
+    const img=await jpTextImg(`患者名：${patientName}`,{size:10,weight:600,color:'#1A1A1A',bg:'rgba(255,255,255,0.88)',padX:6,padY:4});
+    doc.setFillColor(42,107,107);doc.rect(bx-0.5,by,2,img.hMm,'F');doc.addImage(img.url,'PNG',bx+2,by,img.wMm,img.hMm);}
+  if(subProcName){const spImg=await jpTextImg(`対象施術：${subProcName}`,{size:9,weight:600,color:'#1A1A1A',bg:'rgba(255,255,255,0.88)',padX:6,padY:3});doc.addImage(spImg.url,'PNG',ml,8,spImg.wMm,spImg.hMm);}
+  const di=await jpTextImg(`署名日：${fmtDate(now)}`,{size:8,weight:500,color:'#555',bg:'rgba(255,255,255,0.75)',padX:5,padY:3});
+  doc.addImage(di.url,'PNG',pw-mr-di.wMm,8,di.wMm,di.hMm);
+}
+
+/* ── 署名ブロック（画像PDF用）── */
+function addSignatureBlock(doc,sigPng,guardianPng,now,pw,ph,ml,mr){
+  /* 横幅を 0.44 → 0.30 に縮小して縦長に見せる */
+  const bW=(pw-ml-mr)*0.30, bH=18, bX=pw-mr-bW;
+  let bY=ph-22-bH;
+  if(guardianPng){bY=ph-46-bH;}
+
+  /* 患者署名 */
+  doc.setFillColor(255,255,255);try{doc.setGState(new doc.GState({opacity:0.9}));}catch(_){}
+  doc.roundedRect(bX-2,bY-5,bW+4,bH+9,2,2,'F');try{doc.setGState(new doc.GState({opacity:1}));}catch(_){}
+  doc.setDrawColor(42,107,107);doc.setLineWidth(0.4);doc.roundedRect(bX,bY,bW,bH,1.5,1.5,'S');
+  doc.addImage(sigPng,'PNG',bX,bY,bW,bH);
+  doc.setFontSize(6.5);doc.setTextColor(80,80,80);doc.text('Patient Signature',bX,bY-1.5);
+  doc.text(fmtDate(now),bX,bY+bH+4);
+
+  /* 保護者署名 */
+  if(guardianPng){
+    const gbY=bY+bH+14;
+    doc.setFillColor(255,255,255);try{doc.setGState(new doc.GState({opacity:0.9}));}catch(_){}
+    doc.roundedRect(bX-2,gbY-5,bW+4,bH+9,2,2,'F');try{doc.setGState(new doc.GState({opacity:1}));}catch(_){}
+    doc.setDrawColor(122,63,160);doc.setLineWidth(0.4);doc.roundedRect(bX,gbY,bW,bH,1.5,1.5,'S');
+    doc.addImage(guardianPng,'PNG',bX,gbY,bW,bH);
+    doc.setFontSize(6.5);doc.setTextColor(80,80,80);doc.text('Guardian Signature',bX,gbY-1.5);
+  }
+}
+
+/* ── テキスト PDF（崩れ防止版）── */
+async function buildFallbackPdf(doc,now,sigPng,guardianPng,pw,ph,ml,mr,needsSig=true){
+  /* ── マージンをさらに縮小して横幅を最大化 ── */
+  const EML=8,EMR=8;          // 実効マージン（呼び出し側ML/MRより優先）
+  const bw=pw-EML-EMR;
+  const LINE_H=0;              // 行間ゼロ（行の高さ自体に余白あり）
+  const PARA_GAP=1.8;          // 段落間
+  const SIG_H=18,SIG_RESERVE=needsSig?(guardianPng?78:55):16;
+  let y=18;
+
+  /* ヘッダーバー */
+  doc.setFillColor(42,107,107);doc.rect(0,0,pw,13,'F');
+  const hL=await jpTextImg('電子同意書',{size:8,weight:700,color:'#ffffff',padX:4,padY:2});
+  doc.addImage(hL.url,'PNG',EML,2.2,hL.wMm,hL.hMm);
+  const hR=await jpTextImg(fmtDate(now),{size:8,weight:400,color:'#ffffff',padX:4,padY:2});
+  doc.addImage(hR.url,'PNG',pw-EMR-hR.wMm,2.2,hR.wMm,hR.hMm);
+  y=20;
+
+  /* タイトル */
+  const titleImg=await jpTextImg(selProc.name,{size:14,weight:700,color:'#1A1A1A',padX:0,padY:2});
+  doc.addImage(titleImg.url,'PNG',(pw-titleImg.wMm)/2,y,titleImg.wMm,titleImg.hMm);y+=titleImg.hMm+1;
+  if(subProcName){
+    const spI=await jpTextImg(`対象施術：${subProcName}`,{size:9,weight:600,color:'#2A6B6B',padX:0,padY:1});
+    doc.addImage(spI.url,'PNG',(pw-spI.wMm)/2,y,spI.wMm,spI.hMm);y+=spI.hMm+2;
+  }else{y+=2;}
+  doc.setDrawColor(42,107,107);doc.setLineWidth(0.4);doc.line(EML,y,pw-EMR,y);y+=5;
+
+  /* ── 本文：横幅いっぱい・行間ゼロ・フォント小さめ ──
+     jpTextImg のスケール(SC=2)で高解像度化しているため
+     1行に収まる文字数を実測して決定。
+     A4幅194mm / (9px × 0.35 × 0.5) ≈ 1行約52〜54文字 */
+  const MAX_CHARS=52;
+  const paragraphs=(selProc.consentText||'').split('\n');
+  for(const para of paragraphs){
+    if(!para.trim()){y+=PARA_GAP;continue;}
+    const isH=/^[■◇◆●▼【*◇◆]/.test(para.trim());
+    const chunks=[];let rem=para;
+    while(rem.length>MAX_CHARS){chunks.push(rem.slice(0,MAX_CHARS));rem=rem.slice(MAX_CHARS);}
+    if(rem)chunks.push(rem);
+    for(const line of chunks){
+      if(y>ph-SIG_RESERVE){
+        doc.addPage('a4','p');y=16;
+        doc.setFillColor(42,107,107);doc.rect(0,0,pw,8,'F');
+        const cH=await jpTextImg(selProc.name+' （続き）',{size:7,weight:600,color:'#ffffff',padX:4,padY:1.5});
+        doc.addImage(cH.url,'PNG',EML,1.2,cH.wMm,cH.hMm);y=13;
+      }
+      /* 本文9pt・padY=2 で行間を詰める */
+      const li=await jpTextImg(line.trim(),{
+        size: isH ? 9.5 : 9,
+        weight: isH ? 700 : 400,
+        color:'#1A1A1A', padX:0, padY:2
+      });
+      doc.addImage(li.url,'PNG',EML,y,li.wMm,li.hMm);
+      y+=li.hMm+LINE_H;
+    }
+    y+=PARA_GAP;
+  }
+  y+=4;
+
+  /* 情報欄 */
+  const infoLines=[`説明医師：${selDoctor.name} 先生`,...(patientName?[`患者名：${patientName} 様`]:[]),`署名日：${fmtDate(now)}`];
+  const sigBlock=needsSig ? SIG_H+(guardianPng?SIG_H+12:0)+24 : 0;
+  if(y+infoLines.length*6.5+sigBlock>ph){doc.addPage('a4','p');y=16;}
+  doc.setDrawColor(200,200,200);doc.setLineWidth(0.3);doc.line(EML,y,pw-EMR,y);y+=4;
+  for(const info of infoLines){
+    const ii=await jpTextImg(info,{size:9.5,weight:500,color:'#333',padX:0,padY:2});
+    doc.addImage(ii.url,'PNG',EML,y,ii.wMm,ii.hMm);y+=ii.hMm+1;
+  }
+  y+=6;
+
+  /* 署名欄 */
+  if(needsSig){
+    if(y+sigBlock>ph){doc.addPage('a4','p');y=16;}
+    const sigW=bw*0.50;
+    const sLab=await jpTextImg('患者様 署名欄',{size:8.5,weight:700,color:'#555',padX:0,padY:1});
+    doc.addImage(sLab.url,'PNG',EML,y,sLab.wMm,sLab.hMm);y+=sLab.hMm+2;
+    doc.setDrawColor(42,107,107);doc.setLineWidth(0.4);doc.roundedRect(EML,y,sigW,SIG_H,2,2,'S');
+    doc.addImage(sigPng,'PNG',EML+1,y+1,sigW-2,SIG_H-2);
+    y+=SIG_H+6;
+    if(guardianPng){
+      const gLab=await jpTextImg('保護者（親権者）署名欄',{size:8.5,weight:700,color:'#7A3FA0',padX:0,padY:1});
+      doc.addImage(gLab.url,'PNG',EML,y,gLab.wMm,gLab.hMm);y+=gLab.hMm+2;
+      doc.setDrawColor(122,63,160);doc.setLineWidth(0.4);doc.roundedRect(EML,y,sigW,SIG_H,2,2,'S');
+      doc.addImage(guardianPng,'PNG',EML+1,y+1,sigW-2,SIG_H-2);
+      y+=SIG_H+6;
+    }
+  }
+
+  /* フッター */
+  const foot=await jpTextImg('本書面は電子的に作成された同意書です。',{size:7,weight:400,color:'#969690',padX:0,padY:2});
+  doc.addImage(foot.url,'PNG',(pw-foot.wMm)/2,y+2,foot.wMm,foot.hMm);
+}
+
+function imgToBase64(url){return new Promise((res,rej)=>{const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const c=document.createElement('canvas');c.width=img.naturalWidth;c.height=img.naturalHeight;c.getContext('2d').drawImage(img,0,0);res({data:c.toDataURL('image/jpeg',0.92),w:img.naturalWidth,h:img.naturalHeight});};img.onerror=rej;img.src=url;});}
+
+function makeFilename(name,now){const safe=name.replace(/[\\/:*?"<>|]/g,'');return `【${safe}】_署名_${fmtDateShort(now)}_${fmtTime(now)}.pdf`;}
+
+let toastTimer;
+function showToast(msg,type=''){toastEl.textContent=msg;toastEl.className='toast show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),3200);}
+
+/* ── 初期化 ── */
+buildDoctorOptions();
+buildPortal();
+resizeCanvas();
+resizeGuardianCanvas();
+</script>
+</body>
+</html>
