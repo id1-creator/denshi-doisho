@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>電子同意書 署名システム</title>
+  <link rel="icon" href="logo.svg" type="image/svg+xml" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Shippori+Mincho:wght@500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
@@ -65,8 +66,9 @@ html, body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0; z-index: 20;
 }
-.header-icon { width: 38px; height: 38px; flex-shrink: 0; background: var(--teal); border-radius: 11px; display: grid; place-items: center; transition: background 0.3s; }
-.header-icon svg { width: 20px; height: 20px; fill: none; stroke: #fff; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.header-icon { width: 38px; height: 38px; flex-shrink: 0; background: none; border-radius: 0; display: grid; place-items: center; }
+.header-icon img { width: 38px; height: 38px; object-fit: contain; }
+.header-icon svg { width: 20px; height: 20px; fill: none; stroke: var(--teal); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .header-text h1 { font-family: 'Shippori Mincho', serif; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; line-height: 1.3; }
 .header-text p  { font-size: 0.68rem; color: var(--muted); margin-top: 1px; }
 
@@ -76,7 +78,7 @@ html, body {
 .step-pip-dot.active { background: var(--teal); color: #fff; }
 .step-pip-dot.done   { background: var(--teal-light); color: var(--teal); }
 .step-pip-label      { font-size: 0.55rem; color: var(--muted); white-space: nowrap; font-weight: 600; letter-spacing: 0.04em; }
-.step-connector      { width: 18px; height: 1.5px; background: var(--border); margin-bottom: 12px; transition: background 0.25s; }
+.step-connector      { width: 18px; height: 1.5px; background: var(--border); align-self: flex-start; margin-top: 10px; transition: background 0.25s; }
 .step-connector.done { background: var(--teal); }
 
 .btn-back { flex-shrink: 0; border: 1.5px solid var(--border); background: var(--surface); color: var(--teal); font-family: inherit; font-size: 0.8rem; font-weight: 600; padding: 8px 14px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; transition: background 0.15s, border-color 0.15s; }
@@ -401,6 +403,59 @@ html, body {
 }
 .login-error.show { display: block; }
 
+/* ログボタン */
+.btn-log {
+  flex-shrink: 0; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--teal);
+  font-family: inherit; font-size: 0.75rem; font-weight: 600;
+  padding: 7px 12px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  transition: background 0.15s, border-color 0.15s;
+}
+.btn-log:hover { background: var(--teal-light); border-color: var(--teal); }
+.btn-log svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ログモーダル */
+#log-modal {
+  position: fixed; inset: 0; z-index: 8000;
+  background: rgba(0,0,0,0.45);
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px;
+}
+#log-modal.hidden { display: none; }
+.log-modal-inner {
+  background: var(--surface); border-radius: var(--radius);
+  box-shadow: var(--sh-md); width: 100%; max-width: 580px;
+  max-height: 85vh; display: flex; flex-direction: column; overflow: hidden;
+}
+.log-modal-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.log-modal-header h2 { font-family: 'Shippori Mincho',serif; font-size: 1rem; font-weight: 600; flex: 1; }
+.log-count-badge { font-size: 0.72rem; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 20px; padding: 2px 10px; }
+.log-close-btn { width: 28px; height: 28px; border: none; background: none; font-size: 1rem; cursor: pointer; color: var(--muted); border-radius: 6px; display: grid; place-items: center; }
+.log-close-btn:hover { background: var(--surface-2); }
+.log-list { overflow-y: auto; flex: 1; padding: 12px 16px; display: flex; flex-direction: column; gap: 8px; }
+.log-empty { text-align: center; color: var(--muted); font-size: 0.85rem; padding: 40px 0; }
+.log-entry {
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  padding: 12px 14px; display: flex; align-items: center; gap: 12px;
+}
+.log-entry-info { flex: 1; min-width: 0; }
+.log-entry-proc { font-size: 0.85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-entry-meta { font-size: 0.72rem; color: var(--muted); margin-top: 2px; }
+.log-entry-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.log-entry-dl, .log-entry-del {
+  border: none; border-radius: 7px; cursor: pointer; font-size: 0.72rem; font-family: inherit; font-weight: 600;
+  padding: 6px 10px; display: flex; align-items: center; gap: 4px; transition: background 0.15s;
+}
+.log-entry-dl  { background: var(--teal-light); color: var(--teal); }
+.log-entry-dl:hover  { background: #d0e8e8; }
+.log-entry-del { background: var(--danger-light); color: var(--danger); }
+.log-entry-del:hover { background: #f5d0cd; }
+.log-entry-dl svg, .log-entry-del svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
 /* ログアウトボタン */
 #logout-btn {
   position: fixed; bottom: 20px; right: 20px; z-index: 9000;
@@ -419,6 +474,18 @@ html, body {
   </style>
 </head>
 <body>
+
+<!-- ログモーダル -->
+<div id="log-modal" class="hidden">
+  <div class="log-modal-inner">
+    <div class="log-modal-header">
+      <h2>署名ログ</h2>
+      <span class="log-count-badge" id="log-count-badge">0件</span>
+      <button class="log-close-btn" id="log-close-btn">✕</button>
+    </div>
+    <div class="log-list" id="log-list"></div>
+  </div>
+</div>
 
 <!-- ログアウトボタン（ログイン後に表示） -->
 <button id="logout-btn" title="ログアウト">
@@ -1184,8 +1251,12 @@ BMIが18未満の方18歳未満、70歳以上の方
 <!-- STEP 1 ─ ポータル -->
 <div class="screen" id="screen-s1">
   <div class="header">
-    <div class="header-icon"><svg viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></div>
+    <div class="header-icon"><img src="logo.svg" alt="ロゴ"></div>
     <div class="header-text"><h1>電子同意書システム</h1><p>施術を選択して署名へ進んでください</p></div>
+    <button class="btn-log" id="log-open-btn" title="署名ログを見る">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+      ログ
+    </button>
     <div class="step-indicator">
       <div class="step-pip"><div class="step-pip-dot active">1</div><div class="step-pip-label">施術</div></div>
       <div class="step-connector"></div>
@@ -1761,7 +1832,10 @@ btnSave.addEventListener('click',async()=>{
       await buildFallbackPdf(doc,now,sigPng,guardianPng,A4W,A4H,ML,MR,sigVisible);
     }
 
-    doc.save(makeFilename(selProc.name,now));
+    const filename = makeFilename(selProc.name,now);
+    const pdfBlob = doc.output('blob');
+    doc.save(filename);
+    await logSavePdf({date:now,patientName,procedure:selProc.name,doctor:selDoctor.name,filename,blob:pdfBlob});
     showToast('✓ PDFを保存しました。STEP 1 へ戻ります','ok');
     setTimeout(()=>{
       transition(SS3,SS1);clearCanvas();clearGuardianCanvas();
@@ -1934,6 +2008,42 @@ function makeFilename(name,now){const safe=name.replace(/[\\/:*?"<>|]/g,'');retu
 
 let toastTimer;
 function showToast(msg,type=''){toastEl.textContent=msg;toastEl.className='toast show'+(type?' '+type:'');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toastEl.classList.remove('show'),3200);}
+
+/* ══════════════════════════════════════════
+   ★ PDFログ機能（IndexedDB）
+══════════════════════════════════════════ */
+const LOG_DB='doishoLogDB',LOG_VER=1,LOG_STORE='pdfLogs';
+function openLogDB(){return new Promise((res,rej)=>{const r=indexedDB.open(LOG_DB,LOG_VER);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(LOG_STORE)){db.createObjectStore(LOG_STORE,{keyPath:'id',autoIncrement:true});}};r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e.target.error);});}
+async function logSavePdf({date,patientName,procedure,doctor,filename,blob}){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');tx.objectStore(LOG_STORE).add({date:date.toISOString(),patientName,procedure,doctor,filename,blob});tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('ログ保存失敗:',e);}}
+async function logGetAll(){try{const db=await openLogDB();return await new Promise((res,rej)=>{const r=db.transaction(LOG_STORE,'readonly').objectStore(LOG_STORE).getAll();r.onsuccess=()=>res([...r.result].reverse());r.onerror=e=>rej(e.target.error);});}catch{return[];}}
+async function logDelete(id){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');tx.objectStore(LOG_STORE).delete(id);tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('ログ削除失敗:',e);}}
+
+/* ログモーダル制御 */
+const logModal=document.getElementById('log-modal');
+const logList=document.getElementById('log-list');
+const logCountBadge=document.getElementById('log-count-badge');
+document.getElementById('log-open-btn').addEventListener('click',openLogModal);
+document.getElementById('log-close-btn').addEventListener('click',()=>logModal.classList.add('hidden'));
+logModal.addEventListener('click',e=>{if(e.target===logModal)logModal.classList.add('hidden');});
+
+function fmtLogDate(iso){const d=new Date(iso);return`${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;}
+
+async function openLogModal(){
+  logModal.classList.remove('hidden');
+  logList.innerHTML='<div class="log-empty">読み込み中…</div>';
+  const entries=await logGetAll();
+  logCountBadge.textContent=`${entries.length}件`;
+  if(!entries.length){logList.innerHTML='<div class="log-empty">保存されたログはありません</div>';return;}
+  logList.innerHTML='';
+  for(const entry of entries){
+    const div=document.createElement('div');div.className='log-entry';
+    div.innerHTML=`<div class="log-entry-info"><div class="log-entry-proc">${entry.procedure}</div><div class="log-entry-meta">${fmtLogDate(entry.date)}　患者：${entry.patientName||'（未入力）'}　医師：${entry.doctor}</div></div><div class="log-entry-actions"><button class="log-entry-dl" data-id="${entry.id}"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>DL</button><button class="log-entry-del" data-id="${entry.id}"><svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>削除</button></div>`;
+    const blob=entry.blob;const fname=entry.filename||`log_${entry.id}.pdf`;
+    div.querySelector('.log-entry-dl').addEventListener('click',()=>{const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=fname;a.click();setTimeout(()=>URL.revokeObjectURL(url),3000);});
+    div.querySelector('.log-entry-del').addEventListener('click',async()=>{if(!confirm('このログを削除しますか？'))return;await logDelete(entry.id);div.remove();const cur=parseInt(logCountBadge.textContent)||0;logCountBadge.textContent=`${Math.max(0,cur-1)}件`;if(!logList.children.length)logList.innerHTML='<div class="log-empty">保存されたログはありません</div>';});
+    logList.appendChild(div);
+  }
+}
 
 /* ── 初期化 ── */
 buildDoctorOptions();
