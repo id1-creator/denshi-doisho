@@ -403,15 +403,15 @@ html, body {
 
 /* ログアウトボタン */
 #logout-btn {
-  position: fixed; top: 12px; right: 16px; z-index: 9000;
+  position: fixed; bottom: 20px; right: 20px; z-index: 9000;
   display: none;
   align-items: center; gap: 5px;
-  padding: 7px 13px;
+  padding: 9px 16px;
   background: var(--surface); color: var(--muted);
   border: 1.5px solid var(--border); border-radius: 8px;
   font-size: 0.75rem; font-weight: 600; font-family: inherit;
   cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
-  box-shadow: var(--sh-sm);
+  box-shadow: var(--sh-md);
 }
 #logout-btn.visible { display: flex; }
 #logout-btn:hover { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
@@ -425,28 +425,6 @@ html, body {
   <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
   ログアウト
 </button>
-<script>
-(function(){
-  const KEY = 'doisho_auth';
-  const logoutBtn = document.getElementById('logout-btn');
-  function updateLogoutVisibility(){
-    if(sessionStorage.getItem(KEY) === '1'){
-      logoutBtn.classList.add('visible');
-    } else {
-      logoutBtn.classList.remove('visible');
-    }
-  }
-  updateLogoutVisibility();
-  logoutBtn.addEventListener('click', function(){
-    if(!confirm('ログアウトしますか？')) return;
-    sessionStorage.removeItem(KEY);
-    location.reload();
-  });
-  /* ログイン成功後にも表示を更新するため、overlay非表示を監視 */
-  const observer = new MutationObserver(updateLogoutVisibility);
-  observer.observe(document.getElementById('login-overlay'), { attributes: true, attributeFilter: ['class'] });
-})();
-</script>
 
 <!-- ログイン画面 -->
 <div id="login-overlay">
@@ -456,44 +434,68 @@ html, body {
       <small>スタッフ専用ログイン</small>
     </div>
     <div class="login-field">
+      <label for="login-id">ID（メールアドレス）</label>
+      <input type="email" id="login-id" placeholder="IDを入力" autocomplete="username" />
+    </div>
+    <div class="login-field">
       <label for="login-pass">パスワード</label>
       <input type="password" id="login-pass" placeholder="パスワードを入力" autocomplete="current-password" />
     </div>
-    <div class="login-error" id="login-error">パスワードが正しくありません</div>
+    <div class="login-error" id="login-error">IDまたはパスワードが正しくありません</div>
     <button class="login-btn" id="login-btn">ログイン</button>
   </div>
 </div>
 <script>
 (function(){
-  /* SHA-256ハッシュ値のみ保存（平文パスワードはコードに含まれない） */
-  const HASH = 'ec189984c5b36432f04401eb55b916a4801153d10b627bc4cc590382e27d1aa8';
-  const KEY  = 'doisho_auth';
-  const overlay = document.getElementById('login-overlay');
-  const input   = document.getElementById('login-pass');
-  const btn     = document.getElementById('login-btn');
-  const err     = document.getElementById('login-error');
+  /* SHA-256ハッシュ値のみ保存（平文ID・パスワードはコードに含まれない） */
+  const ID_HASH   = 'd94d936baf6a13d80f66460ba392270242e0ae5d34c2bf794dd2cd1dd865da5b';
+  const PASS_HASH = 'ec189984c5b36432f04401eb55b916a4801153d10b627bc4cc590382e27d1aa8';
+  const KEY       = 'doisho_auth';
+
+  const overlay   = document.getElementById('login-overlay');
+  const inputId   = document.getElementById('login-id');
+  const inputPass = document.getElementById('login-pass');
+  const btn       = document.getElementById('login-btn');
+  const err       = document.getElementById('login-error');
+  const logoutBtn = document.getElementById('logout-btn');
 
   async function sha256(str){
     const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
     return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
   }
 
-  function showError(){
-    err.classList.add('show');
-    input.value='';
-    input.focus();
-    setTimeout(()=>err.classList.remove('show'),3000);
+  function setLoggedIn(flag){
+    if(flag){
+      logoutBtn.classList.add('visible');
+      overlay.classList.add('hidden');
+    } else {
+      logoutBtn.classList.remove('visible');
+      overlay.classList.remove('hidden');
+    }
   }
 
-  if(sessionStorage.getItem(KEY) === '1'){ overlay.classList.add('hidden'); }
+  function showError(){
+    err.classList.add('show');
+    inputPass.value = '';
+    inputId.focus();
+    setTimeout(()=>err.classList.remove('show'), 3000);
+  }
+
+  /* 初期表示：セッション確認 */
+  if(sessionStorage.getItem(KEY) === '1'){
+    setLoggedIn(true);
+  }
 
   async function tryLogin(){
     btn.disabled = true;
     try {
-      const hash = await sha256(input.value);
-      if(hash === HASH){
-        sessionStorage.setItem(KEY,'1');
-        overlay.classList.add('hidden');
+      const [idHash, passHash] = await Promise.all([
+        sha256(inputId.value.trim()),
+        sha256(inputPass.value)
+      ]);
+      if(idHash === ID_HASH && passHash === PASS_HASH){
+        sessionStorage.setItem(KEY, '1');
+        setLoggedIn(true);
       } else {
         showError();
       }
@@ -501,8 +503,19 @@ html, body {
       btn.disabled = false;
     }
   }
+
   btn.addEventListener('click', tryLogin);
-  input.addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+  inputPass.addEventListener('keydown', e=>{ if(e.key==='Enter') tryLogin(); });
+  inputId.addEventListener('keydown', e=>{ if(e.key==='Enter') inputPass.focus(); });
+
+  /* ログアウト */
+  logoutBtn.addEventListener('click', function(){
+    if(!confirm('ログアウトしますか？')) return;
+    sessionStorage.removeItem(KEY);
+    inputId.value = '';
+    inputPass.value = '';
+    setLoggedIn(false);
+  });
 })();
 </script>
 
