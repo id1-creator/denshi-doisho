@@ -343,7 +343,7 @@ html, body {
 }
   </style>
 
-  <!-- ログイン画面スタイル -->
+  <!-- ログイン・ログアウトスタイル -->
   <style>
 #login-overlay {
   position: fixed; inset: 0; z-index: 9999;
@@ -400,9 +400,53 @@ html, body {
   display: none;
 }
 .login-error.show { display: block; }
+
+/* ログアウトボタン */
+#logout-btn {
+  position: fixed; top: 12px; right: 16px; z-index: 9000;
+  display: none;
+  align-items: center; gap: 5px;
+  padding: 7px 13px;
+  background: var(--surface); color: var(--muted);
+  border: 1.5px solid var(--border); border-radius: 8px;
+  font-size: 0.75rem; font-weight: 600; font-family: inherit;
+  cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+  box-shadow: var(--sh-sm);
+}
+#logout-btn.visible { display: flex; }
+#logout-btn:hover { background: var(--danger-light); color: var(--danger); border-color: var(--danger); }
+#logout-btn svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   </style>
 </head>
 <body>
+
+<!-- ログアウトボタン（ログイン後に表示） -->
+<button id="logout-btn" title="ログアウト">
+  <svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+  ログアウト
+</button>
+<script>
+(function(){
+  const KEY = 'doisho_auth';
+  const logoutBtn = document.getElementById('logout-btn');
+  function updateLogoutVisibility(){
+    if(sessionStorage.getItem(KEY) === '1'){
+      logoutBtn.classList.add('visible');
+    } else {
+      logoutBtn.classList.remove('visible');
+    }
+  }
+  updateLogoutVisibility();
+  logoutBtn.addEventListener('click', function(){
+    if(!confirm('ログアウトしますか？')) return;
+    sessionStorage.removeItem(KEY);
+    location.reload();
+  });
+  /* ログイン成功後にも表示を更新するため、overlay非表示を監視 */
+  const observer = new MutationObserver(updateLogoutVisibility);
+  observer.observe(document.getElementById('login-overlay'), { attributes: true, attributeFilter: ['class'] });
+})();
+</script>
 
 <!-- ログイン画面 -->
 <div id="login-overlay">
@@ -421,24 +465,40 @@ html, body {
 </div>
 <script>
 (function(){
-  const PASS = 'clinic2026';
+  /* SHA-256ハッシュ値のみ保存（平文パスワードはコードに含まれない） */
+  const HASH = 'ec189984c5b36432f04401eb55b916a4801153d10b627bc4cc590382e27d1aa8';
   const KEY  = 'doisho_auth';
   const overlay = document.getElementById('login-overlay');
   const input   = document.getElementById('login-pass');
   const btn     = document.getElementById('login-btn');
   const err     = document.getElementById('login-error');
 
+  async function sha256(str){
+    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  }
+
+  function showError(){
+    err.classList.add('show');
+    input.value='';
+    input.focus();
+    setTimeout(()=>err.classList.remove('show'),3000);
+  }
+
   if(sessionStorage.getItem(KEY) === '1'){ overlay.classList.add('hidden'); }
 
-  function tryLogin(){
-    if(input.value === PASS){
-      sessionStorage.setItem(KEY,'1');
-      overlay.classList.add('hidden');
-    } else {
-      err.classList.add('show');
-      input.value='';
-      input.focus();
-      setTimeout(()=>err.classList.remove('show'),3000);
+  async function tryLogin(){
+    btn.disabled = true;
+    try {
+      const hash = await sha256(input.value);
+      if(hash === HASH){
+        sessionStorage.setItem(KEY,'1');
+        overlay.classList.add('hidden');
+      } else {
+        showError();
+      }
+    } finally {
+      btn.disabled = false;
     }
   }
   btn.addEventListener('click', tryLogin);
