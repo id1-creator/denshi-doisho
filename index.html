@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Shippori+Mincho:wght@500;600;700&display=swap" rel="stylesheet" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
 
   <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -402,6 +403,19 @@ html, body {
   display: none;
 }
 .login-error.show { display: block; }
+
+/* Drive連携ボタン */
+.btn-gd {
+  flex-shrink: 0; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--muted);
+  font-family: inherit; font-size: 0.72rem; font-weight: 600;
+  padding: 7px 11px; border-radius: 8px; cursor: pointer;
+  display: flex; align-items: center; gap: 4px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.btn-gd:hover { background: var(--teal-light); border-color: var(--teal); color: var(--teal); }
+.btn-gd.connected { border-color: var(--success); color: var(--success); background: #eaf5ef; }
+.btn-gd svg { width: 13px; height: 13px; }
 
 /* ログボタン */
 .btn-log {
@@ -1253,6 +1267,10 @@ BMIが18未満の方18歳未満、70歳以上の方
   <div class="header">
     <div class="header-icon"><img src="logo.svg" alt="ロゴ"></div>
     <div class="header-text"><h1>電子同意書システム</h1><p>施術を選択して署名へ進んでください</p></div>
+    <button class="btn-gd" id="gd-connect-btn" title="Google Driveと連携">
+      <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
+      Drive連携
+    </button>
     <button class="btn-log" id="log-open-btn" title="署名ログを見る">
       <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       ログ
@@ -1837,6 +1855,8 @@ btnSave.addEventListener('click',async()=>{
     doc.save(filename);
     await logSavePdf({date:now,patientName,procedure:selProc.name,doctor:selDoctor.name,filename,blob:pdfBlob});
     showToast('✓ PDFを保存しました。STEP 1 へ戻ります','ok');
+    /* Google Drive バックアップ（バックグラウンド） */
+    gdBackup(pdfBlob, filename, now);
     setTimeout(()=>{
       transition(SS3,SS1);clearCanvas();clearGuardianCanvas();
       selProc=selDoctor=null;patientName='';subProcName='';
@@ -2044,6 +2064,101 @@ async function openLogModal(){
     logList.appendChild(div);
   }
 }
+
+/* ══════════════════════════════════════════
+   ★ Google Drive バックアップ
+══════════════════════════════════════════ */
+const GD_CLIENT_ID = '902597456427-r1r8j3djq0dppaehddjuos7mql27grnk.apps.googleusercontent.com';
+const GD_FOLDER_ID = '1j3PvtdECoyyap6xAc5CVG2VTfT3AwizI';
+const GD_SCOPE     = 'https://www.googleapis.com/auth/drive';
+const GD_TK_KEY    = 'gd_token';
+const GD_EXP_KEY   = 'gd_token_exp';
+
+let gdTokenClient = null;
+let gdPendingBlob = null, gdPendingName = null, gdPendingDate = null;
+
+function gdGetToken(){
+  const t=localStorage.getItem(GD_TK_KEY), exp=parseInt(localStorage.getItem(GD_EXP_KEY)||'0');
+  return (t && Date.now()<exp-60000) ? t : null;
+}
+function gdSetToken(t){ localStorage.setItem(GD_TK_KEY,t); localStorage.setItem(GD_EXP_KEY,Date.now()+3590000); }
+
+function gdUpdateBtn(connected){
+  const btn=document.getElementById('gd-connect-btn');
+  if(!btn)return;
+  if(connected){ btn.classList.add('connected'); btn.querySelector('span') ? btn.querySelector('span').textContent='Drive連携中' : (btn.lastChild.textContent='Drive連携中'); }
+  else { btn.classList.remove('connected'); }
+}
+
+function gdInit(){
+  if(!window.google?.accounts?.oauth2) return;
+  gdTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GD_CLIENT_ID,
+    scope: GD_SCOPE,
+    callback: async (resp) => {
+      if(resp.error){ showToast('Drive認証失敗: '+resp.error,'error'); return; }
+      gdSetToken(resp.access_token);
+      gdUpdateBtn(true);
+      if(gdPendingBlob){ await gdUpload(gdPendingBlob,gdPendingName,gdPendingDate); gdPendingBlob=null; }
+    }
+  });
+  if(gdGetToken()) gdUpdateBtn(true);
+}
+
+async function gdFindOrCreateFolder(token, name, parentId){
+  const q=`name='${name}' and '${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const r=await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)`,{headers:{Authorization:'Bearer '+token}});
+  const d=await r.json();
+  if(d.files&&d.files.length) return d.files[0].id;
+  const cr=await fetch('https://www.googleapis.com/drive/v3/files',{
+    method:'POST', headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({name,mimeType:'application/vnd.google-apps.folder',parents:[parentId]})
+  });
+  return (await cr.json()).id;
+}
+
+async function gdUpload(blob, filename, date){
+  const token=gdGetToken(); if(!token) return;
+  try{
+    const ds=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+    const folderId=await gdFindOrCreateFolder(token, ds, GD_FOLDER_ID);
+    const meta=JSON.stringify({name:filename, parents:[folderId]});
+    const form=new FormData();
+    form.append('metadata', new Blob([meta],{type:'application/json'}));
+    form.append('file', blob, filename);
+    const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+      method:'POST', headers:{Authorization:'Bearer '+token}, body:form
+    });
+    if(resp.ok){ showToast('☁ Driveにバックアップしました','ok'); }
+    else{ const e=await resp.json(); throw new Error(e.error?.message||resp.status); }
+  } catch(e){
+    console.error('Drive upload error:',e);
+    showToast('Drive保存失敗（ローカルは完了）','error');
+  }
+}
+
+async function gdBackup(blob, filename, date){
+  const token=gdGetToken();
+  if(token){ await gdUpload(blob,filename,date); return; }
+  /* 未認証の場合：サイレント再取得を試みる */
+  if(!gdTokenClient) return;
+  gdPendingBlob=blob; gdPendingName=filename; gdPendingDate=date;
+  gdTokenClient.requestAccessToken({prompt:''});
+}
+
+/* 連携ボタンクリック → 明示的にGoogle認証 */
+document.getElementById('gd-connect-btn').addEventListener('click',()=>{
+  if(!gdTokenClient){ showToast('Google認証ライブラリ読み込み中…',''); return; }
+  if(gdGetToken()){ showToast('Drive連携済みです','ok'); return; }
+  gdTokenClient.requestAccessToken({prompt:'consent'});
+});
+
+/* GSIライブラリ読み込み後に初期化 */
+function gdWaitInit(){
+  if(window.google?.accounts?.oauth2){ gdInit(); }
+  else { setTimeout(gdWaitInit,300); }
+}
+gdWaitInit();
 
 /* ── 初期化 ── */
 buildDoctorOptions();
