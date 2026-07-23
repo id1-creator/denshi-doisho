@@ -67,8 +67,8 @@ html, body {
   border-bottom: 1px solid var(--border);
   flex-shrink: 0; z-index: 20;
 }
-.header-icon { width: 38px; height: 38px; flex-shrink: 0; background: none; border-radius: 0; display: grid; place-items: center; }
-.header-icon img { width: 38px; height: 38px; object-fit: contain; }
+.header-icon { width: auto; height: 38px; flex-shrink: 0; background: none; border-radius: 0; display: grid; place-items: center; }
+.header-icon img { height: 32px; width: auto; max-width: 150px; object-fit: contain; }
 .header-icon svg { width: 20px; height: 20px; fill: none; stroke: var(--teal); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .header-text h1 { font-family: 'Shippori Mincho', serif; font-size: 1.05rem; font-weight: 600; letter-spacing: 0.04em; line-height: 1.3; }
 .header-text p  { font-size: 0.68rem; color: var(--muted); margin-top: 1px; }
@@ -1347,7 +1347,7 @@ BMIが18未満の方18歳未満、70歳以上の方
 <!-- STEP 1 ─ ポータル -->
 <div class="screen" id="screen-s1">
   <div class="header">
-    <div class="header-icon"><img src="logo.svg" alt="ロゴ"></div>
+    <div class="header-icon"><img src="logo_umekita.svg" alt="ロゴ"></div>
     <div class="header-text"><h1>電子同意書システム</h1><p>施術を選択して署名へ進んでください</p></div>
     <button class="btn-gd" id="gd-connect-btn" title="Google Driveと連携">
       <svg viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da"/><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-25.4 44a9.06 9.06 0 0 0 -1.2 4.5h27.5z" fill="#00ac47"/><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.502l5.852 11.5z" fill="#ea4335"/><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d"/><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc"/><path d="m73.4 26.5-12.7-22c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 28h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00"/></svg>
@@ -1935,10 +1935,10 @@ btnSave.addEventListener('click',async()=>{
     const filename = makeFilename(selProc.name,now);
     const pdfBlob = doc.output('blob');
     doc.save(filename);
-    await logSavePdf({date:now,patientName,procedure:selProc.name,doctor:selDoctor.name,filename,blob:pdfBlob});
+    const logId = await logSavePdf({date:now,patientName,procedure:selProc.name,doctor:selDoctor.name,filename,blob:pdfBlob});
     showToast('✓ PDFを保存しました。STEP 1 へ戻ります','ok');
     /* Google Drive バックアップ（バックグラウンド） */
-    gdBackup(pdfBlob, filename, now);
+    gdBackup(pdfBlob, filename, now, logId);
     setTimeout(()=>{
       transition(SS3,SS1);clearCanvas();clearGuardianCanvas();
       selProc=selDoctor=null;patientName='';subProcName='';
@@ -2116,7 +2116,8 @@ function showToast(msg,type=''){toastEl.textContent=msg;toastEl.className='toast
 ══════════════════════════════════════════ */
 const LOG_DB='doishoLogDB',LOG_VER=1,LOG_STORE='pdfLogs';
 function openLogDB(){return new Promise((res,rej)=>{const r=indexedDB.open(LOG_DB,LOG_VER);r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains(LOG_STORE)){db.createObjectStore(LOG_STORE,{keyPath:'id',autoIncrement:true});}};r.onsuccess=e=>res(e.target.result);r.onerror=e=>rej(e.target.error);});}
-async function logSavePdf({date,patientName,procedure,doctor,filename,blob}){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');tx.objectStore(LOG_STORE).add({date:date.toISOString(),patientName,procedure,doctor,filename,blob});tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('ログ保存失敗:',e);}}
+async function logSavePdf({date,patientName,procedure,doctor,filename,blob}){try{const db=await openLogDB();return await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');const rq=tx.objectStore(LOG_STORE).add({date:date.toISOString(),patientName,procedure,doctor,filename,blob,synced:false});let newId=null;rq.onsuccess=()=>{newId=rq.result;};tx.oncomplete=()=>res(newId);tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('ログ保存失敗:',e);return null;}}
+async function logMarkSynced(id){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');const st=tx.objectStore(LOG_STORE);const g=st.get(id);g.onsuccess=()=>{const e=g.result;if(e){e.synced=true;st.put(e);}};tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('同期フラグ更新失敗:',e);}}
 async function logGetAll(){try{const db=await openLogDB();return await new Promise((res,rej)=>{const r=db.transaction(LOG_STORE,'readonly').objectStore(LOG_STORE).getAll();r.onsuccess=()=>res([...r.result].reverse());r.onerror=e=>rej(e.target.error);});}catch{return[];}}
 async function logDelete(id){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');tx.objectStore(LOG_STORE).delete(id);tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('ログ削除失敗:',e);}}
 async function logDeleteMultiple(ids){try{const db=await openLogDB();await new Promise((res,rej)=>{const tx=db.transaction(LOG_STORE,'readwrite');const st=tx.objectStore(LOG_STORE);ids.forEach(id=>st.delete(id));tx.oncomplete=res;tx.onerror=e=>rej(e.target.error);});}catch(e){console.warn('一括削除失敗:',e);}}
@@ -2197,7 +2198,7 @@ async function openLogModal(){
   for(const entry of entries){
     const div=document.createElement('div');div.className='log-entry';
     const blob=entry.blob;const fname=entry.filename||`log_${entry.id}.pdf`;
-    div.innerHTML=`<input type="checkbox" class="log-entry-check" data-id="${entry.id}"><div class="log-entry-info"><div class="log-entry-proc">${entry.procedure}</div><div class="log-entry-meta">${fmtLogDate(entry.date)}　患者：${entry.patientName||'（未入力）'}　医師：${entry.doctor}</div></div><div class="log-entry-actions"><button class="log-entry-dl"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>DL</button></div>`;
+    div.innerHTML=`<input type="checkbox" class="log-entry-check" data-id="${entry.id}"><div class="log-entry-info"><div class="log-entry-proc">${entry.procedure}</div><div class="log-entry-meta">${fmtLogDate(entry.date)}　患者：${entry.patientName||'（未入力）'}　医師：${entry.doctor}　${entry.synced?'<span style="color:#2A6B6B;">☁ Drive保存済</span>':'<span style="color:#B3564D;">⏳ Drive未保存</span>'}</div></div><div class="log-entry-actions"><button class="log-entry-dl"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>DL</button></div>`;
     div.querySelector('.log-entry-check').addEventListener('change',e=>{
       div.classList.toggle('selected',e.target.checked);
       logUpdateSelCount();
@@ -2211,13 +2212,13 @@ async function openLogModal(){
    ★ Google Drive バックアップ
 ══════════════════════════════════════════ */
 const GD_CLIENT_ID = '902597456427-r1r8j3djq0dppaehddjuos7mql27grnk.apps.googleusercontent.com';
-const GD_FOLDER_ID = '1j3PvtdECoyyap6xAc5CVG2VTfT3AwizI';
+const GD_FOLDER_ID = '1P7ri1nLUVMIwcjbaypoti9wRJ_s9_SAy';
 const GD_SCOPE     = 'https://www.googleapis.com/auth/drive';
 const GD_TK_KEY    = 'gd_token';
 const GD_EXP_KEY   = 'gd_token_exp';
 
 let gdTokenClient = null;
-let gdPendingBlob = null, gdPendingName = null, gdPendingDate = null;
+let gdPendingBlob = null, gdPendingName = null, gdPendingDate = null, gdPendingLogId = null;
 
 function gdGetToken(){
   const t=localStorage.getItem(GD_TK_KEY), exp=parseInt(localStorage.getItem(GD_EXP_KEY)||'0');
@@ -2241,10 +2242,11 @@ function gdInit(){
       if(resp.error){ showToast('Drive認証失敗: '+resp.error,'error'); return; }
       gdSetToken(resp.access_token);
       gdUpdateBtn(true);
-      if(gdPendingBlob){ await gdUpload(gdPendingBlob,gdPendingName,gdPendingDate); gdPendingBlob=null; }
+      if(gdPendingBlob){ await gdUpload(gdPendingBlob,gdPendingName,gdPendingDate,gdPendingLogId); gdPendingBlob=null; gdPendingLogId=null; }
+      gdSyncAll(); /* 未同期分をまとめてアップロード */
     }
   });
-  if(gdGetToken()) gdUpdateBtn(true);
+  if(gdGetToken()){ gdUpdateBtn(true); gdSyncAll(); }
 }
 
 async function gdFindOrCreateFolder(token, name, parentId){
@@ -2267,40 +2269,80 @@ async function gdFindOrCreateFolder(token, name, parentId){
   return cd.id;
 }
 
-async function gdUpload(blob, filename, date){
+async function gdFileExists(token, name, folderId){
+  const q=`name='${name.replace(/'/g,"\\'")}' and '${folderId}' in parents and trashed=false`;
+  const r=await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id)&supportsAllDrives=true&includeItemsFromAllDrives=true`,
+    {headers:{Authorization:'Bearer '+token}}
+  );
+  const d=await r.json();
+  if(d.error) throw new Error('ファイル確認失敗: '+d.error.message);
+  return !!(d.files&&d.files.length);
+}
+
+/* 1件アップロード（同名ファイルがあればスキップ）。成功/既存なら true */
+async function gdUploadOne(token, blob, filename, date){
+  const ds=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+  const folderId=await gdFindOrCreateFolder(token, ds, GD_FOLDER_ID);
+  if(await gdFileExists(token, filename, folderId)) return true; /* 二重アップロード防止 */
+  const meta=JSON.stringify({name:filename, parents:[folderId]});
+  const form=new FormData();
+  form.append('metadata', new Blob([meta],{type:'application/json'}));
+  form.append('file', blob, filename);
+  /* 共有フォルダへのアップロードに supportsAllDrives=true を付与 */
+  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true',{
+    method:'POST', headers:{Authorization:'Bearer '+token}, body:form
+  });
+  if(!resp.ok){ const e=await resp.json().catch(()=>({})); throw new Error(e.error?.message||resp.status); }
+  return true;
+}
+
+async function gdUpload(blob, filename, date, logId=null){
   const token=gdGetToken(); if(!token) return;
   try{
-    const ds=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
-    const folderId=await gdFindOrCreateFolder(token, ds, GD_FOLDER_ID);
-    const meta=JSON.stringify({name:filename, parents:[folderId]});
-    const form=new FormData();
-    form.append('metadata', new Blob([meta],{type:'application/json'}));
-    form.append('file', blob, filename);
-    /* 共有フォルダへのアップロードに supportsAllDrives=true を付与 */
-    const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true',{
-      method:'POST', headers:{Authorization:'Bearer '+token}, body:form
-    });
-    if(resp.ok){ showToast('☁ Driveにバックアップしました','ok'); }
-    else{ const e=await resp.json(); throw new Error(e.error?.message||resp.status); }
+    await gdUploadOne(token, blob, filename, date);
+    if(logId!=null) await logMarkSynced(logId);
+    showToast('☁ Driveにバックアップしました','ok');
   } catch(e){
     console.error('Drive upload error:',e);
-    showToast('Drive保存失敗（ローカルは完了）','error');
+    showToast('Drive保存失敗（ログに保持・後で自動再送）','error');
   }
 }
 
-async function gdBackup(blob, filename, date){
+/* 未同期ログの一括アップロード（連携時・保存時に自動実行） */
+let gdSyncRunning=false;
+async function gdSyncAll(){
+  if(gdSyncRunning) return;
+  const token=gdGetToken(); if(!token) return;
+  gdSyncRunning=true;
+  try{
+    const entries=(await logGetAll()).filter(e=>!e.synced);
+    if(!entries.length) return;
+    let ok=0, ng=0;
+    for(const e of entries){
+      try{
+        await gdUploadOne(token, e.blob, e.filename||`log_${e.id}.pdf`, new Date(e.date));
+        await logMarkSynced(e.id); ok++;
+      }catch(err){ console.error('Drive sync error:', err); ng++; }
+    }
+    if(ok&&!ng) showToast(`☁ 未保存分 ${ok}件をDriveへ保存しました`,'ok');
+    else if(ng) showToast(`Drive同期: ${ok}件成功 / ${ng}件失敗（後で再試行されます）`,'error');
+  } finally { gdSyncRunning=false; }
+}
+
+async function gdBackup(blob, filename, date, logId=null){
   const token=gdGetToken();
-  if(token){ await gdUpload(blob,filename,date); return; }
-  /* 未認証の場合：サイレント再取得を試みる */
+  if(token){ await gdUpload(blob,filename,date,logId); gdSyncAll(); return; }
+  /* 未認証の場合：サイレント再取得を試みる（成功すると未同期分もまとめて送信） */
   if(!gdTokenClient) return;
-  gdPendingBlob=blob; gdPendingName=filename; gdPendingDate=date;
+  gdPendingBlob=blob; gdPendingName=filename; gdPendingDate=date; gdPendingLogId=logId;
   gdTokenClient.requestAccessToken({prompt:''});
 }
 
 /* 連携ボタンクリック → 明示的にGoogle認証 */
 document.getElementById('gd-connect-btn').addEventListener('click',()=>{
   if(!gdTokenClient){ showToast('Google認証ライブラリ読み込み中…',''); return; }
-  if(gdGetToken()){ showToast('Drive連携済みです','ok'); return; }
+  if(gdGetToken()){ showToast('Drive連携済み・未保存分を確認します','ok'); gdSyncAll(); return; }
   gdTokenClient.requestAccessToken({prompt:'consent'});
 });
 
