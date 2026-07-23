@@ -1958,8 +1958,8 @@ const _jpCanvas=document.createElement('canvas');
 const _jpCtx=_jpCanvas.getContext('2d');
 async function jpTextImg(text,{size=12,weight=500,color='#1A1A1A',bg=null,padX=10,padY=6}={}){
   if(!_jpFontsReady){await document.fonts.ready;_jpFontsReady=true;}
-  /* SC=4: 約290dpi相当の高解像度でレンダリング */
-  const SC=4,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
+  /* SC=8: 約580dpi相当の高解像度でレンダリング */
+  const SC=8,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
   _jpCtx.font=font;
   const m=_jpCtx.measureText(text);
   const tw=Math.ceil(m.width);
