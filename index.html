@@ -1958,14 +1958,20 @@ const _jpCanvas=document.createElement('canvas');
 const _jpCtx=_jpCanvas.getContext('2d');
 async function jpTextImg(text,{size=12,weight=500,color='#1A1A1A',bg=null,padX=10,padY=6}={}){
   if(!_jpFontsReady){await document.fonts.ready;_jpFontsReady=true;}
-  const SC=2,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
+  /* SC=4: 約290dpi相当の高解像度でレンダリング */
+  const SC=4,font=`${weight} ${size*SC}px 'Noto Sans JP',sans-serif`;
   _jpCtx.font=font;
-  const tw=Math.ceil(_jpCtx.measureText(text).width);
-  const cW=tw+padX*2*SC,cH=(size+padY*2)*SC;
+  const m=_jpCtx.measureText(text);
+  const tw=Math.ceil(m.width);
+  /* フォントの実寸（アセント/ディセント）で高さを確保し、下端切れを防止 */
+  const asc =(m.fontBoundingBoxAscent !==undefined)?m.fontBoundingBoxAscent :size*SC*1.05;
+  const desc=(m.fontBoundingBoxDescent!==undefined)?m.fontBoundingBoxDescent:size*SC*0.35;
+  const cW=tw+padX*2*SC, cH=Math.ceil(asc+desc)+padY*2*SC;
   _jpCanvas.width=cW;_jpCanvas.height=cH;
   _jpCtx.font=font;
   if(bg){_jpCtx.fillStyle=bg;_jpCtx.beginPath();_jpCtx.roundRect(0,0,cW,cH,4*SC);_jpCtx.fill();}
-  _jpCtx.fillStyle=color;_jpCtx.textBaseline='top';_jpCtx.fillText(text,padX*SC,padY*SC);
+  _jpCtx.fillStyle=color;_jpCtx.textBaseline='alphabetic';
+  _jpCtx.fillText(text,padX*SC,padY*SC+asc);
   return{url:_jpCanvas.toDataURL('image/png'),wMm:cW/SC*0.35,hMm:cH/SC*0.35};
 }
 
